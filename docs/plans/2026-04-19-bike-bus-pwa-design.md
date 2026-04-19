@@ -53,22 +53,31 @@ Cloudflare Rate Limiting Rule at the Pages project level, capped at 20 requests/
 
 ### Walk → Bike swap rule (per leg, symmetric on head and tail)
 
-```
-WALK_THRESHOLD = 180   # seconds
-BIKE_OVERHEAD  = 90    # seconds, per swapped leg
+Tuning constants live in `src/lib/config.ts` so they can be adjusted from real-world feel without touching algorithm code:
 
+```ts
+// src/lib/config.ts
+export const WALK_THRESHOLD_SEC = 180   // walks under this stay walks
+export const BIKE_OVERHEAD_SEC  = 60    // per swapped leg; personal bike default
+export const MAX_BIKE_MIN       = 20    // candidate filter
+export const MAX_BIKE_MILES     = 4     // candidate filter
+```
+
+```
 for each walkLeg in candidate.legs:
-  if walkLeg.duration < WALK_THRESHOLD:
+  if walkLeg.duration < WALK_THRESHOLD_SEC:
     keep as walk   # overhead of mounting/dismounting not worth it
     continue
 
   bikeDuration = queryBikeDuration(walkLeg.start, walkLeg.end)
 
-  if bikeDuration + BIKE_OVERHEAD < walkLeg.duration:
+  if bikeDuration + BIKE_OVERHEAD_SEC < walkLeg.duration:
     substitute bike
   else:
     keep walk
 ```
+
+`BIKE_OVERHEAD_SEC` defaults to 60s (personal bike: unlock + mount at start, lock + dismount at end, fast). Bike-share users can bump it to ~180s to model app/dock friction. Same constant is used on both head and tail swaps.
 
 - The trailing walk leg is only considered for swap when `bikeAtDestination = true` (default off). Most users don't have a bike at the destination.
 - Mid-route transfer walks (between transit lines) are skipped — they're typically sub-3-min and don't benefit from biking.
@@ -126,9 +135,11 @@ interface Route {
 
 interface RoutesResponse {
   routes: Route[]                // sorted per user's sortBy
-  baselineWalkTransitMinutes: number
+  baselineWalkTransitMinutes: number   // see note below
 }
 ```
+
+**Baseline definition (explicit):** `baselineWalkTransitMinutes` is the total duration of the **fastest pure walk+transit candidate** among the transit alternatives Google returned *before* any bike swaps are applied. This is the honest "what Google would have told you without this tool" number. Each route's `savedVsWalking` field is then `baselineWalkTransitMinutes - route.totalMinutes`. A negative value means the mixed route is slower than walking+transit for that candidate (rare, but possible when `BIKE_OVERHEAD` eats small gains); the UI shows "no time saved" rather than a negative number in that case.
 
 Every walk leg Google returned is preserved in the response, even short ones (< 3 min). This is intentional: it's more transparent ("walk 1 min from the stop to your destination") and avoids the algorithm silently absorbing steps into adjacent legs.
 
@@ -156,7 +167,12 @@ Each leg gets a row: mode icon, duration, from/to names, scheduled times (for tr
 - Single accent color for primary actions.
 - High contrast (readable in sunlight).
 - Skeleton loading state during fetch.
-- Distinct error states for geolocation-denied, no-routes-found, and rate-limited.
+- Distinct error states for:
+  - **Geolocation denied** — copy: "Enter an origin manually" with focus on origin input
+  - **No routes found** — no transit coverage or unreachable destination
+  - **Rate-limited by our own limiter** (HTTP 429 from `/api/routes`) — "too many requests, try again in a minute"
+  - **Upstream quota exhausted** (HTTP 429/403 from Google Routes API, or daily key-cap tripped) — "service temporarily unavailable, try again later." Distinct from our rate limit because the user can't back off their way out of it; they just have to wait. Logged separately so we can see when the daily cap is hit.
+  - **Generic server error** (5xx from Google or Function crash) — "something went wrong, try again"
 
 ## Repo layout
 
@@ -176,6 +192,7 @@ puebla/
 │   │   └── SortSelector.tsx
 │   ├── lib/
 │   │   ├── algorithm.ts          # pure swap logic; runtime-agnostic
+│   │   ├── config.ts             # WALK_THRESHOLD, BIKE_OVERHEAD, etc.
 │   │   ├── mapsClient.ts         # browser Google JS loader
 │   │   ├── api.ts                # POST /api/routes helper
 │   │   ├── deepLinks.ts          # buildMapsUrl(leg)
