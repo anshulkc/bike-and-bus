@@ -17,7 +17,15 @@ In the left nav, **APIs & Services → Library**. Search for and enable each of 
 - **Places API (New)** (for the client-side autocomplete in Task #6)
 - **Geocoding API** (used by Routes API when we pass address strings)
 
-> A billing account is required for Routes API even with the free tier. Cloud → Billing → link a credit card. You get **$200/month free credit** which is more than enough for personal use.
+> A billing account is required even for the free tier. Cloud → Billing → link a credit card. You won't be charged at personal scale — see pricing note below.
+
+## Pricing (confirmed for this app's usage, as of April 2026)
+
+Our calls use `travelMode: TRANSIT` and `travelMode: BICYCLE` with **no traffic modifiers** (no `TRAFFIC_AWARE` or `TRAFFIC_AWARE_OPTIMAL`), so they hit the **Routes API Essentials** SKU. Essentials gets **10,000 free calls per month**. After that it's $2–$7 per 1,000 depending on the specific SKU.
+
+Our per-trip budget is ~10 API calls (1 transit alternatives + up to 6 bike leg re-queries + occasional earlier-departure re-queries), so the free tier comfortably covers **1,000+ trip lookups/month**. You will not hit the limit from personal use.
+
+The daily quota cap below is still worth setting — it's a blast-radius safety net for a leaked key, not an everyday cost control.
 
 ## Create the server key (Routes API)
 

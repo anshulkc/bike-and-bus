@@ -249,6 +249,13 @@ puebla/
 - Offline caching of recent routes
 - Last-mile bike leg without the `bikeAtDestination` toggle
 - Mid-route transfer-walk bike swaps
+- GTFS-RT real-time delay overlay (see v2 ideas below)
+
+## v2 ideas (deferred, but promising)
+
+- **GTFS-RT real-time delay overlay.** LA Metro publishes free real-time vehicle positions and schedule deviations via GTFS-RT. Google Routes API does not expose this, so our scheduled transit times are Google's planned schedule, not live reality. A background poll of GTFS-RT keyed on the line/stop/direction in each route's transit legs would let us show "Red Line 3 min late" or "next bus arriving now" next to the scheduled departAt. Non-trivial (GTFS-RT is a protobuf feed, needs a stop-to-route matcher, and only works in cities that publish feeds) but a high-value enhancement where it applies.
+- **Bike-share dock awareness.** If the user toggles "bike at destination", check whether a dock-based bike-share (Metro Bike Share in LA) has a station near the alighting stop and a confirmed available bike; suggest specific docks rather than assuming a personal bike.
+- **Pricing freedom.** Routes API Essentials (our usage) is 10k free calls/month; no cost pressure. But if this ever scales beyond a side project, migrating transit to GTFS + bike routing to OpenRouteService/Mapbox would flip us from "dependent on Google" to "self-driven" without changing the UX.
 
 ## Open risks
 
