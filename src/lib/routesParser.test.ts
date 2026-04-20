@@ -265,6 +265,48 @@ describe('parseRoutesResponse', () => {
     expect(walk.toLatLng).toEqual({ lat: 34.081, lng: -118.451 })
   })
 
+  it('parses a BICYCLE step into a single bike leg', () => {
+    const bikeOnly: GoogleRoutesResponse = {
+      routes: [
+        {
+          duration: '1080s', // 18 min
+          distanceMeters: 4200,
+          legs: [
+            {
+              steps: [
+                {
+                  travelMode: 'BICYCLE',
+                  staticDuration: '300s',
+                  distanceMeters: 1200,
+                  startLocation: { latLng: { latitude: 34.07, longitude: -118.44 } },
+                  endLocation: { latLng: { latitude: 34.075, longitude: -118.43 } },
+                },
+                {
+                  travelMode: 'BICYCLE',
+                  staticDuration: '780s',
+                  distanceMeters: 3000,
+                  startLocation: { latLng: { latitude: 34.075, longitude: -118.43 } },
+                  endLocation: { latLng: { latitude: 34.09, longitude: -118.41 } },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    const [r] = parseRoutesResponse(bikeOnly, 'Home', '527 Midvale Ave')
+    expect(r.legs.map((l) => l.type)).toEqual(['bike'])
+    const bike = r.legs[0]
+    expect(bike.minutes).toBe(18)
+    expect(bike.seconds).toBe(1080)
+    expect(bike.meters).toBe(4200)
+    expect(bike.fromName).toBe('Home')
+    expect(bike.toName).toBe('527 Midvale Ave')
+    expect(bike.googleMapsUrl).toContain('travelmode=bicycling')
+    expect(r.bikingMinutes).toBe(18)
+    expect(r.transferCount).toBe(0)
+  })
+
   it('drops steps with unexpected travel modes but keeps the route', () => {
     const withDrive: GoogleRoutesResponse = {
       routes: [
