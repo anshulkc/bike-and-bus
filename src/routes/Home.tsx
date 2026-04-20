@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
+import { InstallHint } from '../components/InstallHint'
 
 export function Home() {
   const navigate = useNavigate()
@@ -68,6 +69,8 @@ export function Home() {
           Find routes
         </button>
       </form>
+
+      <InstallHint />
     </main>
   )
 }
