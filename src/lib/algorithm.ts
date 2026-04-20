@@ -23,7 +23,6 @@ export interface BikeResult {
 export type BikeFetcher = (input: BikeFetcherInput) => Promise<BikeResult | null>
 
 export interface ApplyBikeSwapOptions {
-  bikeAtDestination: boolean
   walkThresholdSec?: number
   bikeOverheadSec?: number
   maxBikeMin?: number
@@ -102,12 +101,9 @@ export async function applyBikeSwap(
     const legs = [...route.legs]
     const lastIdx = legs.length - 1
 
-    // Determine which indices are eligible for swap evaluation.
-    // Only head walk (index 0) and, if bikeAtDestination, tail walk (index lastIdx).
-    // Mid-route walks (transfer walks) are never swapped.
     const candidates: number[] = []
     if (legs[0]?.type === 'walk') candidates.push(0)
-    if (opts.bikeAtDestination && lastIdx > 0 && legs[lastIdx]?.type === 'walk') {
+    if (lastIdx > 0 && legs[lastIdx]?.type === 'walk') {
       candidates.push(lastIdx)
     }
 

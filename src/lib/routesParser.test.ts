@@ -195,6 +195,76 @@ describe('parseRoutesResponse', () => {
     expect(r.legs[0].fromName).toBe('34.1,-118.3')
   })
 
+  it('merges consecutive WALK sub-steps into a single walk leg', () => {
+    // Google Routes API v2 returns turn-by-turn walk instructions as multiple
+    // consecutive WALK steps within one walking segment. They must collapse
+    // into one leg with summed duration and distance, otherwise the Detail
+    // view shows a redundant cluster of walks to the same stop.
+    const turnByTurnWalk: GoogleRoutesResponse = {
+      routes: [
+        {
+          duration: '2100s',
+          legs: [
+            {
+              steps: [
+                {
+                  travelMode: 'WALK',
+                  staticDuration: '60s',
+                  distanceMeters: 80,
+                  startLocation: { latLng: { latitude: 34.07, longitude: -118.44 } },
+                  endLocation: { latLng: { latitude: 34.071, longitude: -118.441 } },
+                },
+                {
+                  travelMode: 'WALK',
+                  staticDuration: '540s',
+                  distanceMeters: 700,
+                  startLocation: { latLng: { latitude: 34.071, longitude: -118.441 } },
+                  endLocation: { latLng: { latitude: 34.08, longitude: -118.45 } },
+                },
+                {
+                  travelMode: 'WALK',
+                  staticDuration: '60s',
+                  distanceMeters: 90,
+                  startLocation: { latLng: { latitude: 34.08, longitude: -118.45 } },
+                  endLocation: { latLng: { latitude: 34.081, longitude: -118.451 } },
+                },
+                {
+                  travelMode: 'TRANSIT',
+                  staticDuration: '720s',
+                  distanceMeters: 4000,
+                  transitDetails: {
+                    stopDetails: {
+                      departureStop: {
+                        name: 'Pico Blvd & Westwood Blvd',
+                        location: { latLng: { latitude: 34.081, longitude: -118.451 } },
+                      },
+                      arrivalStop: { name: 'Downtown' },
+                      departureTime: '2026-04-20T00:00:00Z',
+                      arrivalTime: '2026-04-20T00:12:00Z',
+                    },
+                    transitLine: { nameShort: '30' },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    const [r] = parseRoutesResponse(turnByTurnWalk, 'Current location', 'Downtown')
+    expect(r.legs.map((l) => l.type)).toEqual(['walk', 'transit'])
+    const walk = r.legs[0]
+    expect(walk.type).toBe('walk')
+    expect(walk.seconds).toBe(660) // 60 + 540 + 60
+    expect(walk.minutes).toBe(11)
+    expect(walk.meters).toBe(870) // 80 + 700 + 90
+    expect(walk.fromName).toBe('Current location')
+    expect(walk.toName).toBe('Pico Blvd & Westwood Blvd')
+    // Preserves first-step start and last-step end coordinates
+    expect(walk.fromLatLng).toEqual({ lat: 34.07, lng: -118.44 })
+    expect(walk.toLatLng).toEqual({ lat: 34.081, lng: -118.451 })
+  })
+
   it('drops steps with unexpected travel modes but keeps the route', () => {
     const withDrive: GoogleRoutesResponse = {
       routes: [

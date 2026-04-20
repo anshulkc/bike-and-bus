@@ -106,8 +106,32 @@ function parseWalkStep(step: GoogleRouteStep, ctx: LegContext): Leg | null {
   }
 }
 
+// Google Routes API v2 returns turn-by-turn walking instructions as multiple
+// consecutive WALK steps within a single walking segment. Collapse them into
+// one synthetic step so each contiguous walk becomes a single Leg.
+function coalesceWalkSteps(steps: GoogleRouteStep[]): GoogleRouteStep[] {
+  const out: GoogleRouteStep[] = []
+  for (const step of steps) {
+    const prev = out[out.length - 1]
+    if (step.travelMode === 'WALK' && prev?.travelMode === 'WALK') {
+      const prevSec = parseSecondsString(prev.staticDuration)
+      const stepSec = parseSecondsString(step.staticDuration)
+      out[out.length - 1] = {
+        ...prev,
+        staticDuration: `${prevSec + stepSec}s`,
+        distanceMeters: (prev.distanceMeters ?? 0) + (step.distanceMeters ?? 0),
+        endLocation: step.endLocation ?? prev.endLocation,
+      }
+    } else {
+      out.push(step)
+    }
+  }
+  return out
+}
+
 function parseRoute(route: GoogleRoute, tripOrigin: string, tripDestination: string): Route | null {
-  const steps = route.legs?.flatMap((l) => l.steps ?? []) ?? []
+  const rawSteps = route.legs?.flatMap((l) => l.steps ?? []) ?? []
+  const steps = coalesceWalkSteps(rawSteps)
   if (steps.length === 0) return null
 
   // Precompute adjacent transit stop names so walk legs can reference them

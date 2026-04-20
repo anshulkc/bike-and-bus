@@ -3,10 +3,11 @@ import {
   applyEarlierDeparture,
   type ReQueryTransitFetcher,
 } from '../../src/lib/earlierDeparture'
-import { computeRoutes, RoutesApiFetchError } from '../../src/lib/routesApi'
+import { computeRoutes, type LocationInput, RoutesApiFetchError } from '../../src/lib/routesApi'
 import { parseRoutesResponse } from '../../src/lib/routesParser'
 import type {
   ApiError,
+  LatLng,
   Route,
   RoutesRequest,
   RoutesResponse,
@@ -20,7 +21,7 @@ interface Env {
 }
 
 const MONTHLY_BUDGET = 9_900
-const DAILY_PER_IP_BUDGET = 200
+const DAILY_PER_IP_BUDGET = 500
 
 // Conservative up-front estimate for rate-limit gating. 1 transit alternatives
 // + up to 6 bike queries (3 candidates × head+tail) + up to 3 earlier-departure
@@ -54,6 +55,15 @@ function sortRoutes(routes: Route[], sortBy: SortBy): Route[] {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+function isValidLatLng(v: unknown): v is LatLng {
+  if (!v || typeof v !== 'object') return false
+  const { lat, lng } = v as LatLng
+  if (typeof lat !== 'number' || typeof lng !== 'number') return false
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false
+  return true
+}
 
 function parseSeconds(s: string | undefined): number {
   if (!s) return 0
@@ -185,6 +195,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse('invalid_input', 'origin and destination are required', 400)
   }
 
+  const originLatLng = isValidLatLng(body.originLatLng) ? body.originLatLng : undefined
+  const destinationLatLng = isValidLatLng(body.destinationLatLng) ? body.destinationLatLng : undefined
+  const originWaypoint: LocationInput = originLatLng ?? body.origin
+  const destinationWaypoint: LocationInput = destinationLatLng ?? body.destination
+
   const sortBy: SortBy = body.sortBy ?? 'fastest'
   const apiKey = context.env.GOOGLE_SERVER_KEY
   const kv = context.env.RATE_LIMIT
@@ -223,8 +238,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   let googleRes
   try {
     googleRes = await computeRoutes({
-      origin: body.origin,
-      destination: body.destination,
+      origin: originWaypoint,
+      destination: destinationWaypoint,
       travelMode: 'TRANSIT',
       computeAlternativeRoutes: true,
       apiKey,
@@ -255,9 +270,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const bikeFetcher = makeBikeFetcher(apiKey, () => {
     googleCallsMade += 1
   })
-  const swap = await applyBikeSwap(parsed, bikeFetcher, {
-    bikeAtDestination: body.bikeAtDestination === true,
-  })
+  const swap = await applyBikeSwap(parsed, bikeFetcher, {})
 
   if (swap.routes.length === 0) {
     if (kv) await recordUsage({ kv, ip, now, calls: googleCallsMade })

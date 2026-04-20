@@ -32,8 +32,12 @@ export interface Route {
 export interface RoutesRequest {
   origin: string
   destination: string
+  // Optional resolved coordinates. When present, the server uses them for the
+  // Google Routes API call (avoiding a geocoding round-trip) while still
+  // threading the display string through for walk-leg deep links.
+  originLatLng?: LatLng
+  destinationLatLng?: LatLng
   sortBy: SortBy
-  bikeAtDestination: boolean
 }
 
 export interface RoutesResponse {

@@ -34,9 +34,9 @@ const DEFAULT_MIN_SAVINGS_SEC = 60
  * the new route has a total duration less than the currently swapped route.
  *
  * Scope (v1): only routes shaped [bike, transit, ..., walk|nothing]. Routes
- * where the tail walk was also swapped to bike (bikeAtDestination === true)
- * are passed through unchanged — preserving the tail bike across a re-query
- * is more complex than it's worth for the optimization.
+ * where the tail is also a bike leg are passed through unchanged —
+ * preserving the tail bike across a re-query is more complex than it's
+ * worth for the optimization.
  */
 export async function applyEarlierDeparture(
   originalRoutes: Route[],

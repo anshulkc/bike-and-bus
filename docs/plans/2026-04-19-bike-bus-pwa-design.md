@@ -1,7 +1,7 @@
 # Bike + Bus PWA — Design
 
 **Date:** 2026-04-19
-**Status:** Validated through brainstorming; ready for implementation.
+**Status:** v1 shipped. Doc updated post-launch (2026-04-19) to match the as-built UI. Original design sections preserved; "Shipped UI" section at the bottom documents the deltas from the pre-implementation plan.
 
 ## Problem
 
@@ -24,11 +24,11 @@ A Progressive Web App (PWA), installable to the iOS/Android home screen. The use
 ### Stack
 
 - **Frontend:** Vite + React + TypeScript. Chose Vite over Next.js to avoid the `@cloudflare/next-on-pages` adapter and its edge-runtime quirks. Small PWA; adapter overhead is not worth it.
-- **Styling:** Tailwind CSS, mobile-first.
+- **Styling:** Tailwind v4 is in the build pipeline, but the shipped UI is driven by a small set of CSS custom properties (`--bb-bg`, `--bb-surface`, `--bb-fg`, `--bb-mut`, `--bb-line`, `--bb-soft`, `--bb-accent`, `--bb-transit`, `--bb-success`, `--bb-warn`, `--bb-error`) declared in `src/index.css`. Two themes are swapped via `data-theme="mono"` (light) or `data-theme="ink"` (dark) on `<html>`, with a pre-paint inline `<script>` in `index.html` to avoid flash. Components use inline `style={{…}}` with these variables — Tailwind utilities are avoided on themed surfaces so a single set of tokens controls both themes.
 - **Routing:** React Router. Trip state (origin, destination, sortBy, bikeAtDestination) is encoded in URL search params so routes are shareable.
-- **Maps/Places UI:** `@googlemaps/js-api-loader` with Places Autocomplete, using a browser-side key restricted by HTTP referrer. Session tokens on autocomplete to keep Places cost low.
+- **Maps/Places UI:** Google Maps JS is lazy-loaded by a tiny loader in `src/lib/places.ts` (no `@googlemaps/js-api-loader` dependency — ~30 lines of inline script-tag injection, cached on `window`). `usePlacesAutocomplete` attaches `google.maps.places.Autocomplete` to the origin + destination `<input>` elements with an `AutocompleteSessionToken` for session-based billing. Selection fires a callback with `formatted_address` + resolved `lat/lng`, which are then threaded to the server call via the request body. Browser key is read from `VITE_GOOGLE_BROWSER_KEY` and restricted by HTTP referrer.
 - **Server routes:** Cloudflare Pages Functions in `/functions/api/*.ts`. Single endpoint `/api/routes` proxies Google's Routes API v2.
-- **State:** React `useState` + URL search params. No Redux/Zustand.
+- **State:** React `useState` + URL search params as source of truth. URL carries `from`, `to`, `sortBy`, `bikeAtDest`, and optional `fromLat`/`fromLng`/`toLat`/`toLng` for coord-resolved waypoints. `src/lib/routeStore.ts` is a tiny in-memory hot cache keyed by trip signature so `/results/:idx` (detail page) avoids re-fetching on soft navigation. `src/lib/prefs.ts` persists theme + card layout to `localStorage` behind `useTheme()` / `useCardLayout()`. `src/lib/recents.ts` persists the last 5 trips (including coords) to `localStorage`.
 - **PWA:** `vite-plugin-pwa` (Workbox) for manifest + service worker.
 
 ### API keys (two distinct keys, both scoped)
@@ -38,7 +38,12 @@ A Progressive Web App (PWA), installable to the iOS/Android home screen. The use
 
 ### Rate limiting
 
-Cloudflare Rate Limiting Rule at the Pages project level, capped at 20 requests/min/IP for `/api/routes`. If needed later, swap to a KV-backed token bucket. Not worth building in v1.
+Shipped as a **KV-backed soft limiter** in `functions/api/rateLimiter.ts` rather than a Cloudflare Rate Limiting Rule — keeps cost signal (monthly Google call count) and abuse defense (per-IP daily cap) in the same place. Two buckets:
+
+- **Monthly Google-call budget** — `MONTHLY_BUDGET = 9_900` (one under the Routes API Essentials free-tier ceiling of 10k/month). When exhausted, every caller gets `upstream_quota` with "Routing quota exhausted for this month. Resets on the 1st." until the month key rolls.
+- **Daily per-IP cap** — `DAILY_PER_IP_BUDGET = 200` Google calls (~20 trip lookups at ~10 calls each). Prevents one user from eating the whole monthly tier.
+
+The function gates on an up-front estimate (`ESTIMATED_GOOGLE_CALLS_PER_REQUEST = 10`) and then records actual usage after the request completes. If the KV binding is missing (local dev without KV setup), the limiter no-ops. Budgets live in `functions/api/routes.ts` constants and are unit-tested via `rateLimiter.test.ts`.
 
 ## Algorithm
 
@@ -174,42 +179,52 @@ Each leg gets a row: mode icon, duration, from/to names, scheduled times (for tr
   - **Upstream quota exhausted** (HTTP 429/403 from Google Routes API, or daily key-cap tripped) — "service temporarily unavailable, try again later." Distinct from our rate limit because the user can't back off their way out of it; they just have to wait. Logged separately so we can see when the daily cap is hit.
   - **Generic server error** (5xx from Google or Function crash) — "something went wrong, try again"
 
-## Repo layout
+## Repo layout (as-shipped)
 
 ```
 puebla/
 ├── src/
-│   ├── main.tsx
-│   ├── App.tsx
+│   ├── main.tsx                  # BrowserRouter + 4 routes
+│   ├── index.css                 # theme variables + keyframes
 │   ├── routes/
-│   │   ├── Home.tsx
-│   │   └── Results.tsx
+│   │   ├── Home.tsx              # origin/destination + autocomplete + geoloc
+│   │   ├── Results.tsx           # route list + sort + refresh
+│   │   ├── Detail.tsx            # per-route detail page (not in-place expand)
+│   │   └── DebugLinks.tsx        # /debug/links deep-link device tester
 │   ├── components/
-│   │   ├── PlaceAutocomplete.tsx
-│   │   ├── CurrentLocationChip.tsx
-│   │   ├── RouteCard.tsx
-│   │   ├── LegRow.tsx
-│   │   └── SortSelector.tsx
+│   │   ├── Icon.tsx              # all SVG icons (one file, ~30 icons)
+│   │   ├── InstallHint.tsx       # iOS Add-to-Home-Screen prompt
+│   │   ├── MapTile.tsx           # decorative map header for Detail
+│   │   ├── RouteCard.tsx         # compact + detailed layout variants
+│   │   └── SettingsSheet.tsx     # theme + card layout toggles
 │   ├── lib/
-│   │   ├── algorithm.ts          # pure swap logic; runtime-agnostic
+│   │   ├── algorithm.ts          # pure bike-swap logic (walk→bike head/tail)
+│   │   ├── earlierDeparture.ts   # re-query on head-bike savings
+│   │   ├── routesApi.ts          # Google Routes v2 wrapper
+│   │   ├── routesParser.ts       # Google response → Route[]
 │   │   ├── config.ts             # WALK_THRESHOLD, BIKE_OVERHEAD, etc.
-│   │   ├── mapsClient.ts         # browser Google JS loader
-│   │   ├── api.ts                # POST /api/routes helper
 │   │   ├── deepLinks.ts          # buildMapsUrl(leg)
-│   │   └── types.ts              # shared Route/Leg types
-│   └── index.css
+│   │   ├── api.ts                # POST /api/routes (client)
+│   │   ├── places.ts             # Maps JS loader + usePlacesAutocomplete
+│   │   ├── geolocation.ts        # navigator.geolocation Promise wrapper
+│   │   ├── prefs.ts              # useTheme + useCardLayout (localStorage)
+│   │   ├── recents.ts            # last-5 trips in localStorage
+│   │   ├── routeStore.ts         # in-memory cache for Detail page
+│   │   ├── googleTypes.ts        # minimal Google Routes API types
+│   │   └── types.ts              # Route/Leg/LatLng/RoutesRequest/ApiError
 ├── functions/
 │   └── api/
-│       └── routes.ts             # Pages Function: Routes API proxy
-├── public/
-│   ├── manifest.webmanifest
-│   └── icons/                    # 192, 512, maskable
-├── wrangler.toml
-├── vite.config.ts                # + vite-plugin-pwa
-├── tailwind.config.ts
+│       ├── routes.ts             # Pages Function: /api/routes POST
+│       └── rateLimiter.ts        # KV-backed monthly + per-IP limiter
+├── docs/
+│   ├── google-api-setup.md       # server + browser key cookbook
+│   ├── deep-link-findings.md     # /debug/links device matrix results
+│   └── plans/2026-04-19-bike-bus-pwa-design.md  # this doc
+├── public/                       # manifest + icons (192, 512, maskable, favicon)
+├── wrangler.toml                 # Pages Functions + RATE_LIMIT KV binding
+├── vite.config.ts                # + vite-plugin-pwa (Workbox)
 ├── package.json
-├── tsconfig.json
-└── .env.example                  # VITE_GOOGLE_BROWSER_KEY
+└── tsconfig.json                 # strict, includes `src` + `functions`
 ```
 
 `src/lib/algorithm.ts` is deliberately pure: it takes a Google Routes API response plus an injected `fetchBike(leg) => Promise<number>` callback and returns enriched routes. Zero Cloudflare Workers globals, zero Vite dependencies. This makes Vitest unit tests trivial and lets the algorithm be exercised independently of the Cloudflare runtime.
@@ -239,6 +254,62 @@ puebla/
   - Walk leg below `WALK_THRESHOLD` → never queries bike
 - **Playwright** (one smoke test): Home → fill form → Results renders → deep-link URL for first bike leg is well-formed.
 - No integration tests against live Google APIs for v1.
+
+## Shipped UI (delta from plan)
+
+The v1 UI evolved during implementation. This section captures what actually shipped so the doc matches the code.
+
+### Theme system
+
+Two themes, `mono` (light, default) and `ink` (dark). Both ship from day one and are user-togglable via the in-app settings sheet (persisted to `bb.theme`). An inline `<script>` in `index.html` reads the saved theme and sets `data-theme` on `<html>` *before* first paint to avoid theme flash on load.
+
+All themed colors flow through CSS custom properties in `src/index.css`. Components consume them inline (`style={{ background: 'var(--bb-surface)' }}`) so new palettes are a CSS-only change. Tailwind v4 is still in the pipeline for layout utilities, but no `text-neutral-*` / `bg-emerald-*` utility classes appear in themed views — if one creeps in, it's a theme regression.
+
+### Home (`/`)
+
+- Compact header: app mark + about (collapsible info) + settings (sheet).
+- Connected origin → destination card (single rounded surface with a dotted connector line running between the pin icons). Origin defaults to a "Current location" chip with a GPS pill; tapping the `×` switches it to a typed field with autocomplete. Destination is always a typed field with autocomplete.
+- Inline geolocation state indicator under the card (`requesting` / `denied` / `unavailable`) with a warn-tinted background on failure. Denial flips the UI to typed-origin mode and focuses the origin input.
+- "Bike at destination" toggle row (icon + title + description + iOS-style switch).
+- Primary CTA: "Plan mixed route" → changes to "Getting location…" while GPS is pending.
+- Recents list: up to 5 prior trips, tappable to replay (coords preserved in `localStorage`).
+- iOS install hint: bottom-docked card, dismissible, only shown on iOS Safari when not already running standalone.
+
+### Settings sheet
+
+In-page slide-down sheet (not a separate route). Exposes theme (`mono` / `ink`) and results card density (`detailed` / `compact`), persisted to `localStorage`.
+
+### Results (`/results?...`)
+
+- Top bar: back → trip summary (origin → destination, mode, option count) → refresh button (spins while refreshing, not a full page reload).
+- Sort pills: `Fastest` / `Fewest transfers` / `Least biking`, plus a read-only "both ends" pill when `bikeAtDest = true`.
+- Baseline strip: "Baseline (walk + bus): N min" with a success-dot accent and an "updated Ns ago" / "refreshing…" timestamp.
+- Route list: cards in `detailed` or `compact` layout (user preference). Fastest card in the default sort gets a badge.
+- Error/empty states: distinct copy + CTA per `ApiErrorCode` via the `ERROR_COPY` table in `Results.tsx`; severity (`error` / `warn` / `neutral`) drives color accent and icon.
+- A rolling 10-second `setInterval` keeps the "updated Ns ago" timestamp fresh without re-fetching.
+
+### Route detail (`/results/:idx?trip=...`)
+
+Shipped as its **own route**, not the in-place card expansion the original plan described. The shared URL + route store (`src/lib/routeStore.ts`) means deep links still work: if a user lands cold on `/results/0?trip=...`, the page re-issues the `/api/routes` call using the parsed trip key (and coords, if present in the URL).
+
+- Map tile header (`MapTile` component — decorative placeholder, no live map in v1) with back button and a total-miles pill overlay.
+- Summary block: transfer count label + large total minutes + scheduled depart/arrive window + "Saved −N min vs walk + bus" (only shown when positive).
+- Leg rail: one row per step with an icon puck on a left rail. Dotted rail segments under bike legs, solid under transit/walk. Each actionable leg exposes a "Open X nav" button linking to the per-leg Google Maps URL.
+- Primary CTA: "Start {mode} leg in Google Maps" for the first leg, opening the deep link in a new tab.
+
+### Routes API: request/response changes
+
+`RoutesRequest.origin` and `RoutesRequest.destination` remain required strings (human-readable labels used for walk-leg deep-link names in the parser). Optional `originLatLng` / `destinationLatLng` were added — when present, the Pages Function passes the coord to Google Routes API via the `LocationInput` union (`string | { lat, lng }`), avoiding the Routes API's own geocoding round-trip. Client supplies these whenever Places Autocomplete or geolocation resolved coords, and threads them through URL params (`fromLat`, `fromLng`, `toLat`, `toLng`).
+
+### Error taxonomy (as shipped)
+
+Implemented in `src/lib/types.ts` as `ApiErrorCode`:
+
+- `rate_limited` — our own limiter (future use; KV limiter currently returns `upstream_quota`).
+- `upstream_quota` — Google rejected with 429/403 **or** our monthly/daily KV budget tripped.
+- `no_routes` — Google returned 0 candidates, or the bike-swap algorithm dropped all of them.
+- `invalid_input` — missing origin/destination or Google refused a 4xx.
+- `server_error` — anything else.
 
 ## Out of scope for v1
 

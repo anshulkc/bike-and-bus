@@ -52,9 +52,7 @@ function fixedBike(seconds: number, meters = 800): BikeFetcher {
 describe('applyBikeSwap', () => {
   it('swaps the head walk leg when bike+overhead saves time', async () => {
     const r = route([walk({ seconds: 480 /* 8 min */ }), transit()])
-    const result = await applyBikeSwap([r], fixedBike(240 /* 4 min */), {
-      bikeAtDestination: false,
-    })
+    const result = await applyBikeSwap([r], fixedBike(240 /* 4 min */), {})
     expect(result.routes).toHaveLength(1)
     expect(result.routes[0].legs[0].type).toBe('bike')
     expect(result.bikeCallsMade).toBe(1)
@@ -63,9 +61,7 @@ describe('applyBikeSwap', () => {
   it("keeps walk when bike+overhead doesn't save enough time", async () => {
     // 8 min walk, 7 min bike + 60s overhead = 480s. Walk is 480s. Not strictly less → keep walk.
     const r = route([walk({ seconds: 480 }), transit()])
-    const result = await applyBikeSwap([r], fixedBike(420 /* 7 min */), {
-      bikeAtDestination: false,
-    })
+    const result = await applyBikeSwap([r], fixedBike(420 /* 7 min */), {})
     expect(result.routes[0].legs[0].type).toBe('walk')
     expect(result.bikeCallsMade).toBe(1)
   })
@@ -74,25 +70,15 @@ describe('applyBikeSwap', () => {
     // 2-minute walk, below the 180s threshold → no bike API call.
     const r = route([walk({ seconds: 120 }), transit()])
     const fetcher = vi.fn().mockResolvedValue({ seconds: 30, meters: 100 })
-    const result = await applyBikeSwap([r], fetcher, { bikeAtDestination: false })
+    const result = await applyBikeSwap([r], fetcher, {})
     expect(fetcher).not.toHaveBeenCalled()
     expect(result.routes[0].legs[0].type).toBe('walk')
     expect(result.bikeCallsMade).toBe(0)
   })
 
-  it('does NOT swap the tail walk when bikeAtDestination is false', async () => {
-    const r = route([walk({ fromName: 'Origin' }), transit(), walk({ fromName: 'Stop', toName: 'Dest', seconds: 480 })])
-    const fetcher = vi.fn().mockResolvedValue({ seconds: 240, meters: 700 })
-    const result = await applyBikeSwap([r], fetcher, { bikeAtDestination: false })
-    // Only the head walk should be evaluated — 1 call, head becomes bike, tail stays walk.
-    expect(fetcher).toHaveBeenCalledTimes(1)
-    expect(result.routes[0].legs[0].type).toBe('bike')
-    expect(result.routes[0].legs[2].type).toBe('walk')
-  })
-
-  it('swaps both head and tail walks when bikeAtDestination is true', async () => {
+  it('swaps both head and tail walk legs', async () => {
     const r = route([walk({ seconds: 480 }), transit(), walk({ seconds: 360 })])
-    const result = await applyBikeSwap([r], fixedBike(240), { bikeAtDestination: true })
+    const result = await applyBikeSwap([r], fixedBike(240), {})
     expect(result.routes[0].legs[0].type).toBe('bike')
     expect(result.routes[0].legs[2].type).toBe('bike')
     expect(result.bikeCallsMade).toBe(2)
@@ -107,7 +93,7 @@ describe('applyBikeSwap', () => {
       walk({ fromName: 'Stop', toName: 'Dest', seconds: 360 }), // tail
     ])
     const fetcher = vi.fn().mockResolvedValue({ seconds: 240, meters: 600 })
-    const result = await applyBikeSwap([r], fetcher, { bikeAtDestination: true })
+    const result = await applyBikeSwap([r], fetcher, {})
     // Only head + tail get queried; transfer walk is untouched.
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(result.routes[0].legs[0].type).toBe('bike')
@@ -117,24 +103,20 @@ describe('applyBikeSwap', () => {
 
   it('drops a candidate whose bike leg exceeds MAX_BIKE_MIN', async () => {
     const r1 = route([walk({ seconds: 480 }), transit()])
-    const result = await applyBikeSwap([r1], fixedBike(1500 /* 25 min */), {
-      bikeAtDestination: false,
-    })
+    const result = await applyBikeSwap([r1], fixedBike(1500 /* 25 min */), {})
     expect(result.routes).toHaveLength(0)
   })
 
   it('drops a candidate whose bike leg exceeds MAX_BIKE_MILES', async () => {
     const r1 = route([walk({ seconds: 480 }), transit()])
     // 500s bike, 8,047m (5 miles) — over the 4-mile limit.
-    const result = await applyBikeSwap([r1], fixedBike(500, 8047), {
-      bikeAtDestination: false,
-    })
+    const result = await applyBikeSwap([r1], fixedBike(500, 8047), {})
     expect(result.routes).toHaveLength(0)
   })
 
   it('keeps walk when the bike fetcher returns null (could not route)', async () => {
     const r = route([walk({ seconds: 480 }), transit()])
-    const result = await applyBikeSwap([r], async () => null, { bikeAtDestination: false })
+    const result = await applyBikeSwap([r], async () => null, {})
     expect(result.routes[0].legs[0].type).toBe('walk')
     expect(result.bikeCallsMade).toBe(1)
   })
@@ -145,9 +127,7 @@ describe('applyBikeSwap', () => {
       24,
     )
     // Bike 4 min + overhead 1 min → effectively 5 min bike + 14 min transit = 19 min total
-    const result = await applyBikeSwap([r], fixedBike(240 /* 4 min */), {
-      bikeAtDestination: false,
-    })
+    const result = await applyBikeSwap([r], fixedBike(240 /* 4 min */), {})
     // Sum of bike leg seconds (240) + transit seconds (840) = 1080s = 18 min rounded.
     // (BIKE_OVERHEAD is applied during decision, not added to the displayed leg time.)
     expect(result.routes[0].totalMinutes).toBe(18)
@@ -159,7 +139,7 @@ describe('applyBikeSwap', () => {
     const r2 = route([walk({ seconds: 120 }), transit()]) // under threshold — no query
     const r3 = route([walk({ seconds: 600 }), transit()])
     const fetcher = vi.fn().mockResolvedValue({ seconds: 240, meters: 700 })
-    const result = await applyBikeSwap([r1, r2, r3], fetcher, { bikeAtDestination: false })
+    const result = await applyBikeSwap([r1, r2, r3], fetcher, {})
     // r1 and r3 query bike (r2 is under threshold). 2 calls total.
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(result.routes[0].legs[0].type).toBe('bike') // r1 swapped
@@ -172,7 +152,6 @@ describe('applyBikeSwap', () => {
     // Raise the walk threshold so this 8-minute walk no longer qualifies.
     const fetcher = vi.fn().mockResolvedValue({ seconds: 240, meters: 600 })
     const result = await applyBikeSwap([r], fetcher, {
-      bikeAtDestination: false,
       walkThresholdSec: 900,
     })
     expect(fetcher).not.toHaveBeenCalled()
@@ -191,7 +170,7 @@ describe('applyBikeSwap', () => {
       transit(),
     ])
     const fetcher = vi.fn().mockResolvedValue({ seconds: 240, meters: 600 })
-    await applyBikeSwap([r], fetcher, { bikeAtDestination: false })
+    await applyBikeSwap([r], fetcher, {})
     expect(fetcher).toHaveBeenCalledWith({
       from: { name: 'Home', latLng: { lat: 34.05, lng: -118.26 } },
       to: { name: 'Wilshire/Western', latLng: { lat: 34.06, lng: -118.31 } },
@@ -200,7 +179,7 @@ describe('applyBikeSwap', () => {
 
   it('builds a bicycling deep link on swapped legs', async () => {
     const r = route([walk({ fromName: 'Home', toName: 'Stop', seconds: 480 }), transit()])
-    const result = await applyBikeSwap([r], fixedBike(240), { bikeAtDestination: false })
+    const result = await applyBikeSwap([r], fixedBike(240), {})
     const bikeLeg = result.routes[0].legs[0]
     expect(bikeLeg.googleMapsUrl).toContain('travelmode=bicycling')
     expect(bikeLeg.googleMapsUrl).toContain('origin=Home')

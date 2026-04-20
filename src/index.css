@@ -1,9 +1,83 @@
 @import "tailwindcss";
 
-:root {
+:root,
+[data-theme="mono"] {
+  color-scheme: light;
+  --bb-bg: #FAFAFA;
+  --bb-surface: #FFFFFF;
+  --bb-fg: #09090B;
+  --bb-mut: #71717A;
+  --bb-line: #E4E4E7;
+  --bb-soft: #F4F4F5;
+  --bb-accent: #09090B;
+  --bb-transit: #18181B;
+  --bb-success: #16A34A;
+  --bb-success-bg: rgba(34, 139, 72, 0.12);
+  --bb-warn: #B97A00;
+  --bb-warn-bg: rgba(185, 122, 0, 0.10);
+  --bb-warn-line: rgba(185, 122, 0, 0.28);
+  --bb-error: #C83232;
+  --bb-error-bg: rgba(200, 50, 50, 0.08);
+  --bb-error-line: rgba(200, 50, 50, 0.22);
+}
+
+[data-theme="ink"] {
   color-scheme: dark;
+  --bb-bg: #0B0D10;
+  --bb-surface: #15171B;
+  --bb-fg: #F5F6F8;
+  --bb-mut: #8B8F98;
+  --bb-line: #23262C;
+  --bb-soft: #1B1E23;
+  --bb-accent: #7DE2A4;
+  --bb-transit: #F5F6F8;
+  --bb-success: #7DE2A4;
+  --bb-success-bg: rgba(125, 226, 164, 0.14);
+  --bb-warn: #E6B45A;
+  --bb-warn-bg: rgba(230, 180, 90, 0.12);
+  --bb-warn-line: rgba(230, 180, 90, 0.28);
+  --bb-error: #F26B6B;
+  --bb-error-bg: rgba(242, 107, 107, 0.10);
+  --bb-error-line: rgba(242, 107, 107, 0.24);
 }
 
 html, body, #root {
   height: 100%;
 }
+
+body {
+  margin: 0;
+  font-family: 'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  background: var(--bb-bg);
+  color: var(--bb-fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@supports (font-variation-settings: normal) {
+  body {
+    font-family: 'Inter var', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+}
+
+@keyframes bb-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bb-pulse {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes bb-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.bb-shimmer {
+  background-image: linear-gradient(90deg, var(--bb-soft) 0%, var(--bb-line) 40%, var(--bb-soft) 80%);
+  background-size: 800px 100%;
+  animation: bb-shimmer 1.4s linear infinite;
+}
+
