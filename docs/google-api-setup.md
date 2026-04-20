@@ -37,13 +37,14 @@ The daily quota cap below is still worth setting — it's a blast-radius safety 
 6. **Save**.
 7. Copy the key value — you'll paste it into a wrangler secret below.
 
-## Cap the daily quota (important!)
+## Cap the daily quota (leak-defense safety net)
 
 In **APIs & Services → Routes API → Quotas & System Limits**:
 
 - Find **Compute Routes requests per day**.
-- Click the edit (pencil) icon → set to **200** (or whatever you're comfortable with).
-- At $5 per 1000 requests, 200/day = $1/day worst case. Prevents a leaked or misused key from running up a bill.
+- Click the edit (pencil) icon → set to **9,900** (just under the 10,000/month Essentials free-tier ceiling).
+- This is a blast-radius control, not cost control. In normal personal use you'll use well under 200/day.
+- If the key ever leaks, a day of abuse is bounded before you'd rotate. Check your deployments/billing every few days so you'd catch anything unusual quickly.
 
 ## Create the browser key (Places Autocomplete)
 
