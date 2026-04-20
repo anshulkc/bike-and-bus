@@ -1,0 +1,39 @@
+{
+  "name": "bike-and-bus",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf dist .wrangler/tmp node_modules/.vite",
+    "dev": "npm run clean && concurrently -k -n vite,pages -c cyan,magenta \"npm run dev:vite\" \"npm run dev:wrangler\"",
+    "dev:vite": "vite",
+    "dev:wrangler": "wrangler pages dev public --port 8788",
+    "dev:pages": "npm run clean && concurrently -k -n vite,pages -c cyan,magenta \"npm run dev:vite\" \"npm run dev:wrangler\"",
+    "build": "tsc --noEmit && vite build",
+    "preview": "wrangler pages dev dist",
+    "preview:lan": "wrangler pages dev dist --ip 0.0.0.0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260418.1",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vite-pwa/assets-generator": "^1.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.2.1",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.1.4",
+    "wrangler": "^4.83.0"
+  }
+}
