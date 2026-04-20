@@ -1,3 +1,7 @@
 name = "bike-and-bus"
 compatibility_date = "2026-04-19"
 pages_build_output_dir = "dist"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "ac90599c2e0a49ec8cb483ecfc421d10"

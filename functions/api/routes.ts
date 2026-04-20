@@ -7,10 +7,15 @@ import type {
   RoutesResponse,
   SortBy,
 } from '../../src/lib/types'
+import { checkRateLimit, getClientIp, recordUsage } from './rateLimiter'
 
 interface Env {
   GOOGLE_SERVER_KEY?: string
+  RATE_LIMIT?: KVNamespace
 }
+
+const MONTHLY_BUDGET = 9_900 // just under the 10k Essentials free tier
+const DAILY_PER_IP_BUDGET = 200 // ~20 trip lookups per IP per day at ~10 Google calls each
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -123,16 +128,45 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   const sortBy: SortBy = body.sortBy ?? 'fastest'
   const apiKey = context.env.GOOGLE_SERVER_KEY
+  const kv = context.env.RATE_LIMIT
 
   // No key configured → serve the mock so local dev and preview builds still work.
   if (!apiKey) {
     const routes = sortRoutes(buildMockRoutes(body), sortBy)
-    const baselineWalkTransitMinutes = 29 // matches mock
+    const baselineWalkTransitMinutes = 29
     return jsonResponse({ routes, baselineWalkTransitMinutes } satisfies RoutesResponse)
+  }
+
+  const now = new Date()
+  const ip = getClientIp(context.request)
+
+  // Rate-limit check. If KV isn't bound (local dev without KV setup), skip.
+  // We estimate the number of Google calls this request will make up-front so
+  // we don't start a request that would push us past a cap. Task #4 makes 1
+  // call; tasks #7/#8 will bump this to ~7–10.
+  const estimatedGoogleCalls = 1
+
+  if (kv) {
+    const decision = await checkRateLimit({
+      kv,
+      ip,
+      now,
+      monthlyBudget: MONTHLY_BUDGET,
+      dailyPerIpBudget: DAILY_PER_IP_BUDGET,
+      costToDeduct: estimatedGoogleCalls,
+    })
+    if (!decision.allowed) {
+      const message =
+        decision.reason === 'monthly_exhausted'
+          ? "Routing quota exhausted for this month. Resets on the 1st."
+          : "You've hit today's lookup limit. Try again tomorrow."
+      return errorResponse('upstream_quota', message, 429)
+    }
   }
 
   // Real call.
   let googleRes
+  let actualGoogleCalls = 0
   try {
     googleRes = await computeRoutes({
       origin: body.origin,
@@ -141,6 +175,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       computeAlternativeRoutes: true,
       apiKey,
     })
+    actualGoogleCalls = 1
   } catch (e) {
     if (e instanceof RoutesApiFetchError) {
       if (e.status === 429 || e.status === 403) {
@@ -153,12 +188,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse('server_error', 'Routing service failed', 502)
   }
 
+  // Increment counters with the real number of calls made. Done even on empty
+  // results — Google still counted the call against our quota.
+  if (kv) {
+    await recordUsage({ kv, ip, now, calls: actualGoogleCalls })
+  }
+
   const parsed = parseRoutesResponse(googleRes, body.origin, body.destination)
   if (parsed.length === 0) {
     return errorResponse('no_routes', 'No transit routes found between these points', 404)
   }
 
-  // Baseline = fastest walk+transit candidate before any bike swaps (none yet in task #4).
   const baseline = Math.min(...parsed.map((r) => r.totalMinutes))
   const withSavings: Route[] = parsed.map((r) => ({
     ...r,

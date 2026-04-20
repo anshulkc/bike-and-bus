@@ -95,6 +95,17 @@ npx wrangler pages deploy dist --project-name=bike-and-bus --branch=main --commi
 
 Visit your production URL, enter origin + destination, submit. You should see real routes (with real transit times and stop names). If you still see the hardcoded mock data, the key isn't being picked up — check Cloudflare dashboard → Workers & Pages → bike-and-bus → Settings → Environment variables.
 
+## Rate limiting (already wired up)
+
+The Function also enforces two soft rate limits backed by Cloudflare KV:
+
+- **Monthly total: 9,900 Google calls** — once tripped, the Function returns `upstream_quota` with "Routing quota exhausted for this month. Resets on the 1st." to every caller until the month key rolls over.
+- **Per-IP daily: 200 Google calls** (~20 trip lookups) — prevents a single user from burning the whole monthly tier. Message: "You've hit today's lookup limit. Try again tomorrow."
+
+Defaults are in `functions/api/routes.ts` (`MONTHLY_BUDGET`, `DAILY_PER_IP_BUDGET`). Adjust in code if needed.
+
+The KV namespace binding is declared in `wrangler.toml` as `RATE_LIMIT`. When deploying, Cloudflare binds it automatically. If the binding is missing (e.g., local dev without KV setup), the limiter no-ops and the Function serves mocks or calls Google directly — fine for a dev environment.
+
 ## Rotating a key
 
 If a key ever leaks:
