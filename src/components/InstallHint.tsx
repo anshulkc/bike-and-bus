@@ -2,17 +2,9 @@ import { useEffect, useState } from 'react'
 
 const DISMISS_KEY = 'bike-bus.install-hint.dismissed'
 
-type Platform = 'ios-safari' | 'ios-other' | 'other'
-
-function detectPlatform(): Platform {
-  if (typeof window === 'undefined') return 'other'
-  const ua = window.navigator.userAgent
-  const isIOS = /iPad|iPhone|iPod/.test(ua)
-  if (!isIOS) return 'other'
-  // On iOS, every browser is WebKit. Only Safari supports A2HS as a PWA.
-  // Chrome/Firefox/Edge include their name; Safari doesn't.
-  const isSafari = !/CriOS|FxiOS|EdgiOS|OPiOS|YaBrowser/.test(ua) && /Safari/.test(ua)
-  return isSafari ? 'ios-safari' : 'ios-other'
+function isIOS(): boolean {
+  if (typeof window === 'undefined') return false
+  return /iPad|iPhone|iPod/.test(window.navigator.userAgent)
 }
 
 function isStandalone(): boolean {
@@ -24,16 +16,11 @@ function isStandalone(): boolean {
 
 export function InstallHint() {
   const [show, setShow] = useState(false)
-  const [platform, setPlatform] = useState<Platform>('other')
 
   useEffect(() => {
     if (isStandalone()) return
     if (localStorage.getItem(DISMISS_KEY) === '1') return
-    const p = detectPlatform()
-    if (p !== 'other') {
-      setPlatform(p)
-      setShow(true)
-    }
+    if (isIOS()) setShow(true)
   }, [])
 
   function dismiss() {
@@ -50,17 +37,8 @@ export function InstallHint() {
         <div className="flex-1">
           <div className="font-medium">Install to home screen</div>
           <div className="mt-0.5 text-xs text-emerald-200">
-            {platform === 'ios-safari' ? (
-              <>
-                Tap <span className="font-medium">Share</span> → scroll down →{' '}
-                <span className="font-medium">Add to Home Screen</span>.
-              </>
-            ) : (
-              <>
-                Open this page in <span className="font-medium">Safari</span>, then Share →{' '}
-                <span className="font-medium">Add to Home Screen</span>.
-              </>
-            )}
+            Tap <span className="font-medium">Share</span> → scroll down →{' '}
+            <span className="font-medium">Add to Home Screen</span>.
           </div>
         </div>
         <button
