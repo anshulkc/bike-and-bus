@@ -8,6 +8,7 @@
     "dev:pages": "wrangler pages dev --proxy 5173 -- npm run dev",
     "build": "tsc --noEmit && vite build",
     "preview": "wrangler pages dev dist",
+    "preview:lan": "wrangler pages dev dist --ip 0.0.0.0",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
