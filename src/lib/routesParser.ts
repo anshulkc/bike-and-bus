@@ -5,7 +5,12 @@ import type {
   GoogleRouteStep,
   GoogleRoutesResponse,
 } from './googleTypes'
-import type { Leg, Route } from './types'
+import type { LatLng, Leg, Route } from './types'
+
+function toLatLng(g: GoogleLatLng | undefined): LatLng | undefined {
+  if (!g) return undefined
+  return { lat: g.latitude, lng: g.longitude }
+}
 
 function parseSecondsString(s: string | undefined): number {
   if (!s) return 0
@@ -50,13 +55,16 @@ function parseTransitStep(step: GoogleRouteStep, _ctx: LegContext): Leg | null {
   const toInfo = stopDisplay(arrStop?.name, arrStop?.location?.latLng)
 
   const line = td.transitLine?.nameShort ?? td.transitLine?.name ?? 'Transit'
-  const minutes = toMinutes(parseSecondsString(step.staticDuration))
+  const seconds = parseSecondsString(step.staticDuration)
 
   return {
     type: 'transit',
     fromName: fromInfo.display,
     toName: toInfo.display,
-    minutes,
+    fromLatLng: toLatLng(depStop?.location?.latLng),
+    toLatLng: toLatLng(arrStop?.location?.latLng),
+    minutes: toMinutes(seconds),
+    seconds,
     line,
     departAt: td.stopDetails?.departureTime,
     arriveAt: td.stopDetails?.arrivalTime,
@@ -70,7 +78,7 @@ function parseTransitStep(step: GoogleRouteStep, _ctx: LegContext): Leg | null {
 
 function parseWalkStep(step: GoogleRouteStep, ctx: LegContext): Leg | null {
   if (step.travelMode !== 'WALK') return null
-  const minutes = toMinutes(parseSecondsString(step.staticDuration))
+  const seconds = parseSecondsString(step.staticDuration)
 
   // Prefer adjacent named stops over lat/lng for clean deep links.
   const startLatLng = step.startLocation?.latLng
@@ -85,7 +93,11 @@ function parseWalkStep(step: GoogleRouteStep, ctx: LegContext): Leg | null {
     type: 'walk',
     fromName,
     toName,
-    minutes,
+    fromLatLng: toLatLng(startLatLng),
+    toLatLng: toLatLng(endLatLng),
+    minutes: toMinutes(seconds),
+    seconds,
+    meters: step.distanceMeters,
     googleMapsUrl: buildMapsUrl({
       origin: fromName,
       destination: toName,

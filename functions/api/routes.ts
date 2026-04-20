@@ -1,3 +1,8 @@
+import { applyBikeSwap, type BikeFetcher, type BikeResult } from '../../src/lib/algorithm'
+import {
+  applyEarlierDeparture,
+  type ReQueryTransitFetcher,
+} from '../../src/lib/earlierDeparture'
 import { computeRoutes, RoutesApiFetchError } from '../../src/lib/routesApi'
 import { parseRoutesResponse } from '../../src/lib/routesParser'
 import type {
@@ -14,8 +19,13 @@ interface Env {
   RATE_LIMIT?: KVNamespace
 }
 
-const MONTHLY_BUDGET = 9_900 // just under the 10k Essentials free tier
-const DAILY_PER_IP_BUDGET = 200 // ~20 trip lookups per IP per day at ~10 Google calls each
+const MONTHLY_BUDGET = 9_900
+const DAILY_PER_IP_BUDGET = 200
+
+// Conservative up-front estimate for rate-limit gating. 1 transit alternatives
+// + up to 6 bike queries (3 candidates × head+tail) + up to 3 earlier-departure
+// re-queries (1 per head-swapped candidate). Actual usage is recorded after.
+const ESTIMATED_GOOGLE_CALLS_PER_REQUEST = 10
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -40,6 +50,55 @@ function sortRoutes(routes: Route[], sortBy: SortBy): Route[] {
     case 'fastest':
     default:
       return copy.sort((a, b) => a.totalMinutes - b.totalMinutes)
+  }
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function parseSeconds(s: string | undefined): number {
+  if (!s) return 0
+  const match = /^(\d+(?:\.\d+)?)s$/.exec(s)
+  return match ? parseFloat(match[1]) : 0
+}
+
+function makeBikeFetcher(apiKey: string, onCall: () => void): BikeFetcher {
+  return async (input): Promise<BikeResult | null> => {
+    onCall()
+    try {
+      const res = await computeRoutes({
+        origin: input.from.latLng ?? input.from.name,
+        destination: input.to.latLng ?? input.to.name,
+        travelMode: 'BICYCLE',
+        apiKey,
+      })
+      const route = res.routes?.[0]
+      if (!route) return null
+      const seconds = parseSeconds(route.duration)
+      const meters = route.distanceMeters ?? 0
+      if (seconds <= 0) return null
+      return { seconds, meters }
+    } catch {
+      return null
+    }
+  }
+}
+
+function makeReQueryTransitFetcher(apiKey: string, onCall: () => void): ReQueryTransitFetcher {
+  return async ({ fromStop, tripDestination, departureTime }) => {
+    onCall()
+    try {
+      const res = await computeRoutes({
+        origin: fromStop,
+        destination: tripDestination,
+        travelMode: 'TRANSIT',
+        computeAlternativeRoutes: true,
+        departureTime: departureTime.toISOString(),
+        apiKey,
+      })
+      return parseRoutesResponse(res, '', tripDestination)
+    } catch {
+      return null
+    }
   }
 }
 
@@ -133,18 +192,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   // No key configured → serve the mock so local dev and preview builds still work.
   if (!apiKey) {
     const routes = sortRoutes(buildMockRoutes(body), sortBy)
-    const baselineWalkTransitMinutes = 29
-    return jsonResponse({ routes, baselineWalkTransitMinutes } satisfies RoutesResponse)
+    return jsonResponse({ routes, baselineWalkTransitMinutes: 29 } satisfies RoutesResponse)
   }
 
   const now = new Date()
   const ip = getClientIp(context.request)
-
-  // Rate-limit check. If KV isn't bound (local dev without KV setup), skip.
-  // We estimate the number of Google calls this request will make up-front so
-  // we don't start a request that would push us past a cap. Task #4 makes 1
-  // call; tasks #7/#8 will bump this to ~7–10.
-  const estimatedGoogleCalls = 1
 
   if (kv) {
     const decision = await checkRateLimit({
@@ -153,7 +205,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       now,
       monthlyBudget: MONTHLY_BUDGET,
       dailyPerIpBudget: DAILY_PER_IP_BUDGET,
-      costToDeduct: estimatedGoogleCalls,
+      costToDeduct: ESTIMATED_GOOGLE_CALLS_PER_REQUEST,
     })
     if (!decision.allowed) {
       const message =
@@ -164,9 +216,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
   }
 
-  // Real call.
+  // Track real Google call count for accurate usage recording.
+  let googleCallsMade = 0
+
+  // 1) Transit alternatives (walk+transit baseline).
   let googleRes
-  let actualGoogleCalls = 0
   try {
     googleRes = await computeRoutes({
       origin: body.origin,
@@ -175,7 +229,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       computeAlternativeRoutes: true,
       apiKey,
     })
-    actualGoogleCalls = 1
+    googleCallsMade += 1
   } catch (e) {
     if (e instanceof RoutesApiFetchError) {
       if (e.status === 429 || e.status === 403) {
@@ -188,19 +242,50 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse('server_error', 'Routing service failed', 502)
   }
 
-  // Increment counters with the real number of calls made. Done even on empty
-  // results — Google still counted the call against our quota.
-  if (kv) {
-    await recordUsage({ kv, ip, now, calls: actualGoogleCalls })
-  }
-
   const parsed = parseRoutesResponse(googleRes, body.origin, body.destination)
   if (parsed.length === 0) {
+    if (kv) await recordUsage({ kv, ip, now, calls: googleCallsMade })
     return errorResponse('no_routes', 'No transit routes found between these points', 404)
   }
 
+  // Baseline = fastest pure walk+transit candidate BEFORE any bike swaps.
   const baseline = Math.min(...parsed.map((r) => r.totalMinutes))
-  const withSavings: Route[] = parsed.map((r) => ({
+
+  // 2) Apply bike swap. Additional Google calls happen inside the fetcher.
+  const bikeFetcher = makeBikeFetcher(apiKey, () => {
+    googleCallsMade += 1
+  })
+  const swap = await applyBikeSwap(parsed, bikeFetcher, {
+    bikeAtDestination: body.bikeAtDestination === true,
+  })
+
+  if (swap.routes.length === 0) {
+    if (kv) await recordUsage({ kv, ip, now, calls: googleCallsMade })
+    return errorResponse(
+      'no_routes',
+      'All candidates had bike legs that were too long. Try a different origin.',
+      404,
+    )
+  }
+
+  // 3) For head-bike swaps where savings are large enough, re-query transit
+  //    from the boarding stop to see if an earlier departure catches.
+  const reQueryFetcher = makeReQueryTransitFetcher(apiKey, () => {
+    googleCallsMade += 1
+  })
+  // Match swap.routes back to their original pre-swap Route for walk-seconds math.
+  // swap preserves input order, so indices align.
+  const optimized = await applyEarlierDeparture(
+    parsed,
+    swap.routes,
+    reQueryFetcher,
+    body.destination,
+  )
+
+  // Record real usage with rate limiter.
+  if (kv) await recordUsage({ kv, ip, now, calls: googleCallsMade })
+
+  const withSavings: Route[] = optimized.routes.map((r) => ({
     ...r,
     savedVsWalking: Math.max(0, baseline - r.totalMinutes),
   }))

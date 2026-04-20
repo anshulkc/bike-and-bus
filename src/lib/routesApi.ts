@@ -23,14 +23,21 @@ const FIELD_MASK = [
   'routes.legs.steps.transitDetails.transitLine.vehicle.type',
 ].join(',')
 
+export type LocationInput = string | { lat: number; lng: number }
+
 export interface ComputeRoutesArgs {
-  origin: string
-  destination: string
+  origin: LocationInput
+  destination: LocationInput
   travelMode: 'TRANSIT' | 'BICYCLE' | 'WALK'
   computeAlternativeRoutes?: boolean
   departureTime?: string // ISO-8601, optional
   apiKey: string
   fetchImpl?: typeof fetch
+}
+
+function toWaypoint(loc: LocationInput) {
+  if (typeof loc === 'string') return { address: loc }
+  return { location: { latLng: { latitude: loc.lat, longitude: loc.lng } } }
 }
 
 export class RoutesApiFetchError extends Error {
@@ -45,8 +52,8 @@ export class RoutesApiFetchError extends Error {
 
 export async function computeRoutes(args: ComputeRoutesArgs): Promise<GoogleRoutesResponse> {
   const body = {
-    origin: { address: args.origin },
-    destination: { address: args.destination },
+    origin: toWaypoint(args.origin),
+    destination: toWaypoint(args.destination),
     travelMode: args.travelMode,
     computeAlternativeRoutes: args.computeAlternativeRoutes ?? false,
     ...(args.departureTime ? { departureTime: args.departureTime } : {}),

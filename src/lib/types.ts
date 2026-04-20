@@ -1,11 +1,20 @@
 export type LegType = 'bike' | 'transit' | 'walk'
 export type SortBy = 'fastest' | 'fewestTransfers' | 'leastBiking'
 
+export interface LatLng {
+  lat: number
+  lng: number
+}
+
 export interface Leg {
   type: LegType
   fromName: string
   toName: string
+  fromLatLng?: LatLng
+  toLatLng?: LatLng
   minutes: number
+  seconds?: number  // kept for algorithm math; minutes is rounded for display
+  meters?: number   // populated on bike legs so MAX_BIKE_MILES can be checked
   googleMapsUrl: string
   line?: string
   departAt?: string

@@ -22,10 +22,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# env
+# env (local secrets — never commit)
 .env
 .env.*.local
 .env.local
+.dev.vars
 
 # editor
 .vscode
