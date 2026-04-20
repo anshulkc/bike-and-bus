@@ -46,6 +46,18 @@ In **APIs & Services → Routes API → Quotas & System Limits**:
 - This is a blast-radius control, not cost control. In normal personal use you'll use well under 200/day.
 - If the key ever leaks, a day of abuse is bounded before you'd rotate. Check your deployments/billing every few days so you'd catch anything unusual quickly.
 
+## Billing alert (get emailed the moment anything costs money)
+
+In **Billing → Budgets & alerts → Create budget**:
+
+- Budget name: `bike-and-bus alert`
+- Amount: `$1` (any real charge at all)
+- Alert thresholds: 50%, 90%, 100% (defaults are fine)
+- **Notification email:** `anshulkchennavaram@gmail.com` (the Gmail — *not* the Cloudflare login address)
+- Save
+
+If the KV rate limiter, the Google daily cap, or both ever fail to hold, this gets you an email before the damage is real.
+
 ## Create the browser key (Places Autocomplete)
 
 1. **Credentials → Create Credentials → API key** again.
