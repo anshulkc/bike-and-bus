@@ -76,6 +76,35 @@ function parseTransitStep(step: GoogleRouteStep, _ctx: LegContext): Leg | null {
   }
 }
 
+function parseBikeStep(step: GoogleRouteStep, ctx: LegContext): Leg | null {
+  if (step.travelMode !== 'BICYCLE') return null
+  const seconds = parseSecondsString(step.staticDuration)
+
+  const startLatLng = step.startLocation?.latLng
+  const endLatLng = step.endLocation?.latLng
+
+  const fromName =
+    ctx.prevStepArrivalName ?? (ctx.tripOrigin || latLngToString(startLatLng) || 'Start')
+  const toName =
+    ctx.nextStepDepartureName ?? (ctx.tripDestination || latLngToString(endLatLng) || 'End')
+
+  return {
+    type: 'bike',
+    fromName,
+    toName,
+    fromLatLng: toLatLng(startLatLng),
+    toLatLng: toLatLng(endLatLng),
+    minutes: toMinutes(seconds),
+    seconds,
+    meters: step.distanceMeters,
+    googleMapsUrl: buildMapsUrl({
+      origin: fromName,
+      destination: toName,
+      type: 'bike',
+    }),
+  }
+}
+
 function parseWalkStep(step: GoogleRouteStep, ctx: LegContext): Leg | null {
   if (step.travelMode !== 'WALK') return null
   const seconds = parseSecondsString(step.staticDuration)
@@ -106,14 +135,15 @@ function parseWalkStep(step: GoogleRouteStep, ctx: LegContext): Leg | null {
   }
 }
 
-// Google Routes API v2 returns turn-by-turn walking instructions as multiple
-// consecutive WALK steps within a single walking segment. Collapse them into
-// one synthetic step so each contiguous walk becomes a single Leg.
-function coalesceWalkSteps(steps: GoogleRouteStep[]): GoogleRouteStep[] {
+// Google Routes API v2 returns turn-by-turn instructions as multiple consecutive
+// steps of the same mode within a single segment. Collapse them into one
+// synthetic step so each contiguous walk or bike segment becomes a single Leg.
+function coalesceSameModeSteps(steps: GoogleRouteStep[]): GoogleRouteStep[] {
   const out: GoogleRouteStep[] = []
   for (const step of steps) {
     const prev = out[out.length - 1]
-    if (step.travelMode === 'WALK' && prev?.travelMode === 'WALK') {
+    const mergeable = step.travelMode === 'WALK' || step.travelMode === 'BICYCLE'
+    if (mergeable && prev && prev.travelMode === step.travelMode) {
       const prevSec = parseSecondsString(prev.staticDuration)
       const stepSec = parseSecondsString(step.staticDuration)
       out[out.length - 1] = {
@@ -131,7 +161,7 @@ function coalesceWalkSteps(steps: GoogleRouteStep[]): GoogleRouteStep[] {
 
 function parseRoute(route: GoogleRoute, tripOrigin: string, tripDestination: string): Route | null {
   const rawSteps = route.legs?.flatMap((l) => l.steps ?? []) ?? []
-  const steps = coalesceWalkSteps(rawSteps)
+  const steps = coalesceSameModeSteps(rawSteps)
   if (steps.length === 0) return null
 
   // Precompute adjacent transit stop names so walk legs can reference them
@@ -173,9 +203,10 @@ function parseRoute(route: GoogleRoute, tripOrigin: string, tripDestination: str
     } else if (step.travelMode === 'WALK') {
       const leg = parseWalkStep(step, ctx)
       if (leg) legs.push(leg)
+    } else if (step.travelMode === 'BICYCLE') {
+      const leg = parseBikeStep(step, ctx)
+      if (leg) legs.push(leg)
     }
-    // Other travel modes (DRIVE, BICYCLE on initial transit query) are unexpected
-    // and dropped. Bike legs get introduced by the swap algorithm (task #7).
   })
 
   if (legs.length === 0) return null

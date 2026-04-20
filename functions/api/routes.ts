@@ -1,8 +1,3 @@
-import { applyBikeSwap, type BikeFetcher, type BikeResult } from '../../src/lib/algorithm'
-import {
-  applyEarlierDeparture,
-  type ReQueryTransitFetcher,
-} from '../../src/lib/earlierDeparture'
 import { computeRoutes, type LocationInput, RoutesApiFetchError } from '../../src/lib/routesApi'
 import { parseRoutesResponse } from '../../src/lib/routesParser'
 import type {
@@ -23,10 +18,8 @@ interface Env {
 const MONTHLY_BUDGET = 9_900
 const DAILY_PER_IP_BUDGET = 500
 
-// Conservative up-front estimate for rate-limit gating. 1 transit alternatives
-// + up to 6 bike queries (3 candidates × head+tail) + up to 3 earlier-departure
-// re-queries (1 per head-swapped candidate). Actual usage is recorded after.
-const ESTIMATED_GOOGLE_CALLS_PER_REQUEST = 10
+// Pure bike routing = exactly 1 Google Routes call per user request.
+const ESTIMATED_GOOGLE_CALLS_PER_REQUEST = 1
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -65,53 +58,6 @@ function isValidLatLng(v: unknown): v is LatLng {
   return true
 }
 
-function parseSeconds(s: string | undefined): number {
-  if (!s) return 0
-  const match = /^(\d+(?:\.\d+)?)s$/.exec(s)
-  return match ? parseFloat(match[1]) : 0
-}
-
-function makeBikeFetcher(apiKey: string, onCall: () => void): BikeFetcher {
-  return async (input): Promise<BikeResult | null> => {
-    onCall()
-    try {
-      const res = await computeRoutes({
-        origin: input.from.latLng ?? input.from.name,
-        destination: input.to.latLng ?? input.to.name,
-        travelMode: 'BICYCLE',
-        apiKey,
-      })
-      const route = res.routes?.[0]
-      if (!route) return null
-      const seconds = parseSeconds(route.duration)
-      const meters = route.distanceMeters ?? 0
-      if (seconds <= 0) return null
-      return { seconds, meters }
-    } catch {
-      return null
-    }
-  }
-}
-
-function makeReQueryTransitFetcher(apiKey: string, onCall: () => void): ReQueryTransitFetcher {
-  return async ({ fromStop, tripDestination, departureTime }) => {
-    onCall()
-    try {
-      const res = await computeRoutes({
-        origin: fromStop,
-        destination: tripDestination,
-        travelMode: 'TRANSIT',
-        computeAlternativeRoutes: true,
-        departureTime: departureTime.toISOString(),
-        apiKey,
-      })
-      return parseRoutesResponse(res, '', tripDestination)
-    } catch {
-      return null
-    }
-  }
-}
-
 // ─── Mock fallback (used when no key in env, e.g. local dev) ─────────────────
 
 function buildMockRoutes(req: RoutesRequest): Route[] {
@@ -122,59 +68,17 @@ function buildMockRoutes(req: RoutesRequest): Route[] {
 
   return [
     {
-      totalMinutes: 22,
-      savedVsWalking: 7,
+      totalMinutes: 18,
+      savedVsWalking: 0,
       transferCount: 0,
-      bikingMinutes: 8,
+      bikingMinutes: 18,
       legs: [
         {
           type: 'bike',
           fromName: from,
-          toName: 'Wilshire/Western Station',
-          minutes: 8,
-          googleMapsUrl: mapsUrl(from, 'Wilshire/Western Station', 'bicycling'),
-        },
-        {
-          type: 'transit',
-          fromName: 'Wilshire/Western Station',
           toName: to,
-          minutes: 14,
-          line: 'Red Line',
-          departAt: '2026-04-19T15:42:00-07:00',
-          arriveAt: '2026-04-19T15:56:00-07:00',
-          googleMapsUrl: mapsUrl('Wilshire/Western Station', to, 'transit'),
-        },
-      ],
-    },
-    {
-      totalMinutes: 28,
-      savedVsWalking: 3,
-      transferCount: 1,
-      bikingMinutes: 5,
-      legs: [
-        {
-          type: 'bike',
-          fromName: from,
-          toName: '6th/Vermont',
-          minutes: 5,
-          googleMapsUrl: mapsUrl(from, '6th/Vermont', 'bicycling'),
-        },
-        {
-          type: 'transit',
-          fromName: '6th/Vermont',
-          toName: 'Pershing Square',
-          minutes: 16,
-          line: '720 Rapid',
-          departAt: '2026-04-19T15:40:00-07:00',
-          arriveAt: '2026-04-19T15:56:00-07:00',
-          googleMapsUrl: mapsUrl('6th/Vermont', 'Pershing Square', 'transit'),
-        },
-        {
-          type: 'walk',
-          fromName: 'Pershing Square',
-          toName: to,
-          minutes: 2,
-          googleMapsUrl: mapsUrl('Pershing Square', to, 'walking'),
+          minutes: 18,
+          googleMapsUrl: mapsUrl(from, to, 'bicycling'),
         },
       ],
     },
@@ -207,7 +111,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   // No key configured → serve the mock so local dev and preview builds still work.
   if (!apiKey) {
     const routes = sortRoutes(buildMockRoutes(body), sortBy)
-    return jsonResponse({ routes, baselineWalkTransitMinutes: 29 } satisfies RoutesResponse)
+    const baseline = routes[0]?.totalMinutes ?? 0
+    return jsonResponse({ routes, baselineWalkTransitMinutes: baseline } satisfies RoutesResponse)
   }
 
   const now = new Date()
@@ -231,20 +136,15 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
   }
 
-  // Track real Google call count for accurate usage recording.
-  let googleCallsMade = 0
-
-  // 1) Transit alternatives (walk+transit baseline).
+  // Pure bike query — one Google call, one bike route.
   let googleRes
   try {
     googleRes = await computeRoutes({
       origin: originWaypoint,
       destination: destinationWaypoint,
-      travelMode: 'TRANSIT',
-      computeAlternativeRoutes: true,
+      travelMode: 'BICYCLE',
       apiKey,
     })
-    googleCallsMade += 1
   } catch (e) {
     if (e instanceof RoutesApiFetchError) {
       if (e.status === 429 || e.status === 403) {
@@ -258,52 +158,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const parsed = parseRoutesResponse(googleRes, body.origin, body.destination)
+  if (kv) await recordUsage({ kv, ip, now, calls: 1 })
+
   if (parsed.length === 0) {
-    if (kv) await recordUsage({ kv, ip, now, calls: googleCallsMade })
-    return errorResponse('no_routes', 'No transit routes found between these points', 404)
+    return errorResponse('no_routes', 'No bike route found between these points', 404)
   }
 
-  // Baseline = fastest pure walk+transit candidate BEFORE any bike swaps.
-  const baseline = Math.min(...parsed.map((r) => r.totalMinutes))
-
-  // 2) Apply bike swap. Additional Google calls happen inside the fetcher.
-  const bikeFetcher = makeBikeFetcher(apiKey, () => {
-    googleCallsMade += 1
-  })
-  const swap = await applyBikeSwap(parsed, bikeFetcher, {})
-
-  if (swap.routes.length === 0) {
-    if (kv) await recordUsage({ kv, ip, now, calls: googleCallsMade })
-    return errorResponse(
-      'no_routes',
-      'All candidates had bike legs that were too long. Try a different origin.',
-      404,
-    )
-  }
-
-  // 3) For head-bike swaps where savings are large enough, re-query transit
-  //    from the boarding stop to see if an earlier departure catches.
-  const reQueryFetcher = makeReQueryTransitFetcher(apiKey, () => {
-    googleCallsMade += 1
-  })
-  // Match swap.routes back to their original pre-swap Route for walk-seconds math.
-  // swap preserves input order, so indices align.
-  const optimized = await applyEarlierDeparture(
-    parsed,
-    swap.routes,
-    reQueryFetcher,
-    body.destination,
-  )
-
-  // Record real usage with rate limiter.
-  if (kv) await recordUsage({ kv, ip, now, calls: googleCallsMade })
-
-  const withSavings: Route[] = optimized.routes.map((r) => ({
-    ...r,
-    savedVsWalking: Math.max(0, baseline - r.totalMinutes),
-  }))
-
-  const sorted = sortRoutes(withSavings, sortBy)
+  const sorted = sortRoutes(parsed, sortBy)
+  const baseline = sorted[0]?.totalMinutes ?? 0
   return jsonResponse({
     routes: sorted,
     baselineWalkTransitMinutes: baseline,
