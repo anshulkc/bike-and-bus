@@ -38,6 +38,10 @@ export interface RoutesRequest {
   originLatLng?: LatLng
   destinationLatLng?: LatLng
   sortBy: SortBy
+  // User's comfortable max biking distance in miles. Routes beyond this are
+  // served as walk+transit with bike-swapped first/last legs instead of pure
+  // bike. Omit to use the server default.
+  maxBikeMiles?: number
 }
 
 export interface RoutesResponse {

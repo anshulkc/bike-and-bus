@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { fetchRoutes, RoutesApiError } from '../lib/api'
 import type { ApiErrorCode, LatLng, RoutesResponse, SortBy } from '../lib/types'
-import { useCardLayout } from '../lib/prefs'
+import { useCardLayout, useMaxBikeMiles } from '../lib/prefs'
 import { setStoredTrip, tripKey } from '../lib/routeStore'
 import {
   ChevIcon,
@@ -28,6 +28,7 @@ export function Results() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [layout] = useCardLayout()
+  const [maxBikeMiles] = useMaxBikeMiles()
 
   const from = params.get('from') ?? ''
   const to = params.get('to') ?? ''
@@ -71,6 +72,7 @@ export function Results() {
           originLatLng: fromLatLng ?? undefined,
           destinationLatLng: toLatLng ?? undefined,
           sortBy,
+          maxBikeMiles,
         })
         setData(res)
         setStoredTrip({
@@ -94,7 +96,7 @@ export function Results() {
         setRefreshing(false)
       }
     },
-    [from, to, fromLatLng, toLatLng, sortBy],
+    [from, to, fromLatLng, toLatLng, sortBy, maxBikeMiles],
   )
 
   useEffect(() => {

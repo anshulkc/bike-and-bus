@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { CardLayout, Theme } from '../lib/prefs'
 
 type Props = {
@@ -5,9 +6,18 @@ type Props = {
   setTheme: (t: Theme) => void
   layout: CardLayout
   setLayout: (l: CardLayout) => void
+  maxBikeMiles: number
+  setMaxBikeMiles: (miles: number) => void
 }
 
-export function SettingsSheet({ theme, setTheme, layout, setLayout }: Props) {
+export function SettingsSheet({
+  theme,
+  setTheme,
+  layout,
+  setLayout,
+  maxBikeMiles,
+  setMaxBikeMiles,
+}: Props) {
   return (
     <div
       style={{
@@ -55,6 +65,66 @@ export function SettingsSheet({ theme, setTheme, layout, setLayout }: Props) {
           />
         </div>
       </Section>
+
+      <div style={{ height: 14 }} />
+
+      <Section label="Max bike distance">
+        <MaxBikeInput miles={maxBikeMiles} onChange={setMaxBikeMiles} />
+        <div style={{ fontSize: 11, color: 'var(--bb-mut)', marginTop: 6 }}>
+          Trips longer than this switch to bus with a short bike leg on each end.
+        </div>
+      </Section>
+    </div>
+  )
+}
+
+function MaxBikeInput({
+  miles,
+  onChange,
+}: {
+  miles: number
+  onChange: (m: number) => void
+}) {
+  const [text, setText] = useState(String(miles))
+
+  // Keep local text in sync if the prop changes from elsewhere.
+  useEffect(() => {
+    setText(String(miles))
+  }, [miles])
+
+  const commit = (raw: string) => {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) onChange(n)
+    else setText(String(miles))
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <input
+        type="number"
+        inputMode="decimal"
+        min={0.25}
+        max={50}
+        step={0.5}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        }}
+        style={{
+          width: 88,
+          padding: '8px 10px',
+          borderRadius: 10,
+          background: 'var(--bb-bg)',
+          color: 'var(--bb-fg)',
+          border: '1px solid var(--bb-line)',
+          fontSize: 14,
+          fontFamily: 'inherit',
+          textAlign: 'right',
+        }}
+      />
+      <span style={{ fontSize: 13, color: 'var(--bb-mut)' }}>miles</span>
     </div>
   )
 }
