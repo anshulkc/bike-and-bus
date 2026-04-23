@@ -1,3 +1,4 @@
+import { applyBikeSwap, type BikeFetcher } from '../../src/lib/algorithm'
 import { computeRoutes, type LocationInput, RoutesApiFetchError } from '../../src/lib/routesApi'
 import { parseRoutesResponse } from '../../src/lib/routesParser'
 import type {
@@ -18,8 +19,13 @@ interface Env {
 const MONTHLY_BUDGET = 9_900
 const DAILY_PER_IP_BUDGET = 500
 
-// Pure bike routing = exactly 1 Google Routes call per user request.
-const ESTIMATED_GOOGLE_CALLS_PER_REQUEST = 1
+const METERS_PER_MILE = 1609.344
+const DEFAULT_MAX_BIKE_MILES = 3
+
+// Worst case per request: 1 (pure bike) + 1 (transit alt) + 3 routes × 2 swap
+// calls = 8 Google calls. Charge the upper bound against the budget up front
+// to avoid over-running.
+const WORST_CASE_CALLS_PER_REQUEST = 8
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -58,7 +64,14 @@ function isValidLatLng(v: unknown): v is LatLng {
   return true
 }
 
-// ─── Mock fallback (used when no key in env, e.g. local dev) ─────────────────
+function clampMaxBikeMiles(raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
+    return DEFAULT_MAX_BIKE_MILES
+  }
+  return Math.min(Math.max(raw, 0.25), 50)
+}
+
+// ─── Mock fallback (used when no key in env) ────────────────────────────────
 
 function buildMockRoutes(req: RoutesRequest): Route[] {
   const from = req.origin
@@ -105,10 +118,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const destinationWaypoint: LocationInput = destinationLatLng ?? body.destination
 
   const sortBy: SortBy = body.sortBy ?? 'fastest'
+  const maxBikeMiles = clampMaxBikeMiles(body.maxBikeMiles)
+  const maxBikeMeters = maxBikeMiles * METERS_PER_MILE
   const apiKey = context.env.GOOGLE_SERVER_KEY
   const kv = context.env.RATE_LIMIT
 
-  // No key configured → serve the mock so local dev and preview builds still work.
   if (!apiKey) {
     const routes = sortRoutes(buildMockRoutes(body), sortBy)
     const baseline = routes[0]?.totalMinutes ?? 0
@@ -125,7 +139,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       now,
       monthlyBudget: MONTHLY_BUDGET,
       dailyPerIpBudget: DAILY_PER_IP_BUDGET,
-      costToDeduct: ESTIMATED_GOOGLE_CALLS_PER_REQUEST,
+      costToDeduct: WORST_CASE_CALLS_PER_REQUEST,
     })
     if (!decision.allowed) {
       const message =
@@ -136,16 +150,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     }
   }
 
-  // Pure bike query — one Google call, one bike route.
-  let googleRes
-  try {
-    googleRes = await computeRoutes({
-      origin: originWaypoint,
-      destination: destinationWaypoint,
-      travelMode: 'BICYCLE',
-      apiKey,
-    })
-  } catch (e) {
+  let callsMade = 0
+  const failed = (e: unknown) => {
     if (e instanceof RoutesApiFetchError) {
       if (e.status === 429 || e.status === 403) {
         return errorResponse('upstream_quota', 'Routing service is over quota or rate-limited', 503)
@@ -157,14 +163,81 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return errorResponse('server_error', 'Routing service failed', 502)
   }
 
-  const parsed = parseRoutesResponse(googleRes, body.origin, body.destination)
-  if (kv) await recordUsage({ kv, ip, now, calls: 1 })
-
-  if (parsed.length === 0) {
-    return errorResponse('no_routes', 'No bike route found between these points', 404)
+  // 1. Pure bike route — always.
+  let bikeRoutes: Route[]
+  try {
+    const res = await computeRoutes({
+      origin: originWaypoint,
+      destination: destinationWaypoint,
+      travelMode: 'BICYCLE',
+      apiKey,
+    })
+    callsMade += 1
+    bikeRoutes = parseRoutesResponse(res, body.origin, body.destination, 'BICYCLE')
+  } catch (e) {
+    return failed(e)
   }
 
-  const sorted = sortRoutes(parsed, sortBy)
+  const bikeMeters = bikeRoutes[0]?.legs[0]?.meters ?? 0
+  const pureBikeWithinLimit = bikeMeters > 0 && bikeMeters <= maxBikeMeters
+
+  let finalRoutes: Route[]
+
+  if (pureBikeWithinLimit || bikeRoutes.length === 0) {
+    finalRoutes = bikeRoutes
+  } else {
+    // 2. Over the user's bike threshold → also fetch transit alternatives.
+    let transitRoutes: Route[] = []
+    try {
+      const res = await computeRoutes({
+        origin: originWaypoint,
+        destination: destinationWaypoint,
+        travelMode: 'TRANSIT',
+        computeAlternativeRoutes: true,
+        apiKey,
+      })
+      callsMade += 1
+      transitRoutes = parseRoutesResponse(res, body.origin, body.destination, 'TRANSIT')
+    } catch {
+      // Transit fetch failed → fall back to the long bike ride.
+      transitRoutes = []
+    }
+
+    if (transitRoutes.length > 0) {
+      // 3. Swap long walks at the start/end for bike legs when biking is faster.
+      const fetchBike: BikeFetcher = async (input) => {
+        try {
+          const res = await computeRoutes({
+            origin: input.from.latLng ?? input.from.name,
+            destination: input.to.latLng ?? input.to.name,
+            travelMode: 'BICYCLE',
+            apiKey,
+          })
+          callsMade += 1
+          const secondsStr = res.routes?.[0]?.duration ?? '0s'
+          const seconds = parseFloat(secondsStr.replace(/s$/, '')) || 0
+          const meters = res.routes?.[0]?.distanceMeters ?? 0
+          if (seconds <= 0) return null
+          return { seconds, meters }
+        } catch {
+          return null
+        }
+      }
+
+      const { routes } = await applyBikeSwap(transitRoutes, fetchBike, { maxBikeMiles })
+      finalRoutes = routes
+    } else {
+      finalRoutes = bikeRoutes // fallback: long bike ride
+    }
+  }
+
+  if (kv) await recordUsage({ kv, ip, now, calls: callsMade })
+
+  if (finalRoutes.length === 0) {
+    return errorResponse('no_routes', 'No route found between these points', 404)
+  }
+
+  const sorted = sortRoutes(finalRoutes, sortBy)
   const baseline = sorted[0]?.totalMinutes ?? 0
   return jsonResponse({
     routes: sorted,

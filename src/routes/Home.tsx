@@ -18,7 +18,7 @@ import {
   type PlaceSelection,
   type Prediction,
 } from '../lib/places'
-import { useCardLayout, useTheme } from '../lib/prefs'
+import { useCardLayout, useMaxBikeMiles, useTheme } from '../lib/prefs'
 import { loadRecents, pushRecent, type RecentTrip } from '../lib/recents'
 import type { LatLng } from '../lib/types'
 
@@ -35,6 +35,7 @@ export function Home() {
   const navigate = useNavigate()
   const [theme, setTheme] = useTheme()
   const [layout, setLayout] = useCardLayout()
+  const [maxBikeMiles, setMaxBikeMiles] = useMaxBikeMiles()
 
   const [origin, setOrigin] = useState('')
   const [originLatLng, setOriginLatLng] = useState<LatLng | null>(null)
@@ -226,7 +227,14 @@ export function Home() {
 
         {/* in-app settings sheet */}
         {settingsOpen && (
-          <SettingsSheet theme={theme} setTheme={setTheme} layout={layout} setLayout={setLayout} />
+          <SettingsSheet
+            theme={theme}
+            setTheme={setTheme}
+            layout={layout}
+            setLayout={setLayout}
+            maxBikeMiles={maxBikeMiles}
+            setMaxBikeMiles={setMaxBikeMiles}
+          />
         )}
 
         {/* collapsible info */}

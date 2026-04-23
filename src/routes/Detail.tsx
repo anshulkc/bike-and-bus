@@ -9,6 +9,7 @@ import {
 } from '../components/Icon'
 import { MapTile } from '../components/MapTile'
 import { fetchRoutes, RoutesApiError } from '../lib/api'
+import { useMaxBikeMiles } from '../lib/prefs'
 import { getStoredTrip, setStoredTrip } from '../lib/routeStore'
 import type { LatLng, Leg, Route, SortBy } from '../lib/types'
 
@@ -37,6 +38,7 @@ export function Detail() {
     [toLatParam, toLngParam],
   )
 
+  const [maxBikeMiles] = useMaxBikeMiles()
   const [route, setRoute] = useState<Route | null>(() => {
     const stored = getStoredTrip(tripKeyParam)
     return stored?.data.routes[idx] ?? null
@@ -66,6 +68,7 @@ export function Detail() {
       originLatLng: fromLatLng ?? undefined,
       destinationLatLng: toLatLng ?? undefined,
       sortBy: sortBy as SortBy,
+      maxBikeMiles,
     })
       .then((res) => {
         if (cancelled) return
@@ -94,7 +97,7 @@ export function Detail() {
     return () => {
       cancelled = true
     }
-  }, [tripKeyParam, idx, route, fromLatLng, toLatLng])
+  }, [tripKeyParam, idx, route, fromLatLng, toLatLng, maxBikeMiles])
 
   if (load.kind === 'loading') {
     return <Frame><CenteredMessage>Loading route…</CenteredMessage></Frame>
