@@ -10,6 +10,7 @@ import {
 import { MapTile } from '../components/MapTile'
 import { fetchRoutes, RoutesApiError } from '../lib/api'
 import { buildTripMapsUrl } from '../lib/deepLinks'
+import { formatLocalTime } from '../lib/formatTime'
 import { useMaxBikeMiles } from '../lib/prefs'
 import { getStoredTrip, setStoredTrip } from '../lib/routeStore'
 import type { LatLng, Leg, Route, SortBy } from '../lib/types'
@@ -539,7 +540,7 @@ function buildSteps(route: Route): Step[] {
   steps.push({
     kind: 'endpoint',
     title: last?.toName ?? 'Destination',
-    sub: last?.arriveAt ? `arrive ${last.arriveAt}` : null,
+    sub: last?.arriveAt ? `arrive ${formatLocalTime(last.arriveAt)}` : null,
   })
   return steps
 }
@@ -563,9 +564,9 @@ function stepForLeg(leg: Leg): Step {
       accent: true,
       title: leg.line ? `Board ${leg.line}` : `Board transit`,
       sub: leg.fromName
-        ? `at ${leg.fromName}${leg.departAt ? ` · departs ${leg.departAt}` : ''}`
+        ? `at ${leg.fromName}${leg.departAt ? ` · departs ${formatLocalTime(leg.departAt)}` : ''}`
         : leg.departAt
-          ? `departs ${leg.departAt}`
+          ? `departs ${formatLocalTime(leg.departAt)}`
           : null,
       line: leg.line,
     }

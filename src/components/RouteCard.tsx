@@ -1,4 +1,5 @@
 import { BikeIcon, BusIcon, ChevIcon, WalkIcon } from './Icon'
+import { formatLocalTime } from '../lib/formatTime'
 import type { Route, Leg, LegType } from '../lib/types'
 
 type Props = {
@@ -64,7 +65,7 @@ export function RouteCardDetailed({ route, index, onOpen, isFastest }: Props) {
         icon: <BusIcon size={11} color="var(--bb-bg)" />,
         title: leg.line ? `Bus ${leg.line}` : `Transit ${leg.minutes} min`,
         sub: leg.departAt
-          ? `${leg.minutes} min · departs ${leg.departAt}`
+          ? `${leg.minutes} min · departs ${formatLocalTime(leg.departAt)}`
           : `${leg.minutes} min`,
         line: leg.line,
       })
@@ -81,7 +82,7 @@ export function RouteCardDetailed({ route, index, onOpen, isFastest }: Props) {
   steps.push({
     icon: null,
     title: last?.toName ?? 'Destination',
-    sub: arr ? `arrive ${arr}` : null,
+    sub: arr ? `arrive ${formatLocalTime(arr)}` : null,
     type: 'end',
   })
 
@@ -127,7 +128,7 @@ export function RouteCardDetailed({ route, index, onOpen, isFastest }: Props) {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
           <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: -0.6 }}>{route.totalMinutes}</div>
           <div style={{ fontSize: 12, color: 'var(--bb-mut)' }}>
-            min{arr ? ` · arrive ${arr}` : ''}
+            min{arr ? ` · arrive ${formatLocalTime(arr)}` : ''}
           </div>
         </div>
       </div>
@@ -319,7 +320,7 @@ export function RouteCardCompact({ route, index, onOpen, isFastest }: Props) {
           }}
         >
           {tag}
-          {dep && arr ? ` · ${dep} → ${arr}` : ''}
+          {dep && arr ? ` · ${formatLocalTime(dep)} → ${formatLocalTime(arr)}` : ''}
           {route.savedVsWalking > 0 ? ` · saves ${route.savedVsWalking} min` : ''}
         </div>
       </div>
