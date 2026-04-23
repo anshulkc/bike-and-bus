@@ -9,6 +9,7 @@ import {
 } from '../components/Icon'
 import { MapTile } from '../components/MapTile'
 import { fetchRoutes, RoutesApiError } from '../lib/api'
+import { buildTripMapsUrl } from '../lib/deepLinks'
 import { useMaxBikeMiles } from '../lib/prefs'
 import { getStoredTrip, setStoredTrip } from '../lib/routeStore'
 import type { LatLng, Leg, Route, SortBy } from '../lib/types'
@@ -69,6 +70,7 @@ export function Detail() {
       destinationLatLng: toLatLng ?? undefined,
       sortBy: sortBy as SortBy,
       maxBikeMiles,
+      departureTime: params.get('depart') ?? undefined,
     })
       .then((res) => {
         if (cancelled) return
@@ -126,7 +128,9 @@ export function Detail() {
     <DetailBody
       route={route}
       backHref={
-        tripKeyParam ? `/results?${decodeTripToQuery(tripKeyParam, fromLatLng, toLatLng)}` : '/'
+        tripKeyParam
+          ? `/results?${decodeTripToQuery(tripKeyParam, fromLatLng, toLatLng, params.get('depart'))}`
+          : '/'
       }
     />
   )
@@ -148,6 +152,7 @@ function decodeTripToQuery(
   key: string,
   fromLatLng: LatLng | null,
   toLatLng: LatLng | null,
+  departureTime: string | null,
 ): string {
   const [origin, destination, sortBy] = key.split('::')
   const p = new URLSearchParams({
@@ -163,6 +168,7 @@ function decodeTripToQuery(
     p.set('toLat', String(toLatLng.lat))
     p.set('toLng', String(toLatLng.lng))
   }
+  if (departureTime) p.set('depart', departureTime)
   return p.toString()
 }
 
@@ -214,13 +220,18 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
 
   // Build steps for the rail
   const steps = buildSteps(route)
-  const firstAction = route.legs[0]
+  const tripMapsUrl = useMemo(() => buildTripMapsUrl(route), [route])
+  const tripMode: 'transit' | 'bike' | 'walk' = route.legs.some((l) => l.type === 'transit')
+    ? 'transit'
+    : route.legs.some((l) => l.type === 'bike')
+      ? 'bike'
+      : 'walk'
 
   return (
     <Frame>
       {/* map header */}
       <div style={{ position: 'relative' }}>
-        <MapTile height={240} />
+        <MapTile route={route} height={240} />
         <Link
           to={backHref}
           aria-label="Back"
@@ -451,10 +462,10 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
         </div>
       </div>
 
-      {/* primary CTA — opens first leg in Google Maps */}
+      {/* primary CTA — opens the entire trip in Google Maps */}
       <div style={{ padding: '16px 20px 24px' }}>
         <a
-          href={firstAction.googleMapsUrl}
+          href={tripMapsUrl}
           target="_blank"
           rel="noreferrer noopener"
           style={{
@@ -477,10 +488,10 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
             boxSizing: 'border-box',
           }}
         >
-          {firstAction.type === 'bike' && <BikeIcon size={16} color="var(--bb-bg)" />}
-          {firstAction.type === 'transit' && <BusIcon size={16} color="var(--bb-bg)" />}
-          {firstAction.type === 'walk' && <WalkIcon size={16} color="var(--bb-bg)" />}
-          Start {firstAction.type} leg in Google Maps
+          {tripMode === 'bike' && <BikeIcon size={16} color="var(--bb-bg)" />}
+          {tripMode === 'transit' && <BusIcon size={16} color="var(--bb-bg)" />}
+          {tripMode === 'walk' && <WalkIcon size={16} color="var(--bb-bg)" />}
+          Open full trip in Google Maps
           <ExternalIcon size={14} color="var(--bb-bg)" />
         </a>
         <div
@@ -493,8 +504,7 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
             paddingBottom: 'env(safe-area-inset-bottom)',
           }}
         >
-          Hands you off to Google Maps for turn-by-turn. Come back when you reach{' '}
-          {firstAction.toName || 'the next stop'} for the next leg.
+          Hands off to Google Maps for turn-by-turn across the whole route.
         </div>
       </div>
     </Frame>

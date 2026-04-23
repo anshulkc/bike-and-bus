@@ -42,6 +42,9 @@ export interface RoutesRequest {
   // served as walk+transit with bike-swapped first/last legs instead of pure
   // bike. Omit to use the server default.
   maxBikeMiles?: number
+  // Desired departure time as an ISO 8601 string (UTC). Omit for "now".
+  // Transit routing uses this to anchor bus/train schedules.
+  departureTime?: string
 }
 
 export interface RoutesResponse {

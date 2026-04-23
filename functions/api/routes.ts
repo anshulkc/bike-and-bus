@@ -71,6 +71,19 @@ function clampMaxBikeMiles(raw: unknown): number {
   return Math.min(Math.max(raw, 0.25), 50)
 }
 
+// Google's Routes API accepts a future departureTime for transit. Reject
+// non-ISO strings and anything in the past or beyond a reasonable horizon —
+// we don't want to pass weird values downstream.
+function validDepartureTime(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined
+  const t = Date.parse(raw)
+  if (Number.isNaN(t)) return undefined
+  const now = Date.now()
+  if (t < now - 5 * 60 * 1000) return undefined // >5 min in the past
+  if (t > now + 14 * 24 * 60 * 60 * 1000) return undefined // >14 days ahead
+  return new Date(t).toISOString()
+}
+
 // ─── Mock fallback (used when no key in env) ────────────────────────────────
 
 function buildMockRoutes(req: RoutesRequest): Route[] {
@@ -120,6 +133,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const sortBy: SortBy = body.sortBy ?? 'fastest'
   const maxBikeMiles = clampMaxBikeMiles(body.maxBikeMiles)
   const maxBikeMeters = maxBikeMiles * METERS_PER_MILE
+  const departureTime = validDepartureTime(body.departureTime)
   const apiKey = context.env.GOOGLE_SERVER_KEY
   const kv = context.env.RATE_LIMIT
 
@@ -171,6 +185,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       destination: destinationWaypoint,
       travelMode: 'BICYCLE',
       apiKey,
+      departureTime,
     })
     callsMade += 1
     bikeRoutes = parseRoutesResponse(res, body.origin, body.destination, 'BICYCLE')
@@ -195,6 +210,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         travelMode: 'TRANSIT',
         computeAlternativeRoutes: true,
         apiKey,
+        departureTime,
       })
       callsMade += 1
       transitRoutes = parseRoutesResponse(res, body.origin, body.destination, 'TRANSIT')
@@ -212,6 +228,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             destination: input.to.latLng ?? input.to.name,
             travelMode: 'BICYCLE',
             apiKey,
+            departureTime,
           })
           callsMade += 1
           const secondsStr = res.routes?.[0]?.duration ?? '0s'

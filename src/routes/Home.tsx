@@ -29,6 +29,36 @@ type PlanArgs = {
   originLatLng: LatLng | null
   destinationText: string
   destinationLatLng: LatLng | null
+  departAt: string | null
+}
+
+// <input type="datetime-local"> returns a string like "2026-04-23T15:30" in
+// the user's local time zone. Turn that into a UTC ISO the API can pass to
+// Google, or null if empty.
+function localToIso(local: string): string | null {
+  if (!local) return null
+  const d = new Date(local)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
+function isoToLocal(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function formatDepartLabel(iso: string | null): string {
+  if (!iso) return 'Now'
+  const d = new Date(iso)
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export function Home() {
@@ -47,6 +77,9 @@ export function Home() {
   const [infoOpen, setInfoOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [recents, setRecents] = useState<RecentTrip[]>([])
+
+  const [departAt, setDepartAt] = useState<string | null>(null) // ISO UTC, null = now
+  const [departPickerOpen, setDepartPickerOpen] = useState(false)
 
   const originInputRef = useRef<HTMLInputElement | null>(null)
   const destInputRef = useRef<HTMLInputElement | null>(null)
@@ -97,6 +130,7 @@ export function Home() {
       params.set('toLat', String(args.destinationLatLng.lat))
       params.set('toLng', String(args.destinationLatLng.lng))
     }
+    if (args.departAt) params.set('depart', args.departAt)
     navigate(`/results?${params.toString()}`)
   }
 
@@ -111,6 +145,7 @@ export function Home() {
           originLatLng,
           destinationText: destination,
           destinationLatLng,
+          departAt,
         })
         return
       }
@@ -124,6 +159,7 @@ export function Home() {
           originLatLng: pos,
           destinationText: destination,
           destinationLatLng,
+          departAt,
         })
       } catch (err) {
         if (err instanceof GeolocationError) {
@@ -144,6 +180,7 @@ export function Home() {
       originLatLng,
       destinationText: destination,
       destinationLatLng,
+      departAt,
     })
   }
 
@@ -452,6 +489,67 @@ export function Home() {
             </div>
           </div>
 
+          {/* Depart-at picker */}
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setDepartPickerOpen((v) => !v)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 12px',
+                borderRadius: 999,
+                border: '1px solid var(--bb-line)',
+                background: departAt ? 'var(--bb-fg)' : 'var(--bb-surface)',
+                color: departAt ? 'var(--bb-bg)' : 'var(--bb-fg)',
+                fontSize: 12,
+                fontWeight: 500,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+              aria-expanded={departPickerOpen}
+            >
+              Leave {formatDepartLabel(departAt)}
+              <span style={{ opacity: 0.7, fontSize: 10 }}>▾</span>
+            </button>
+            {departAt && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDepartAt(null)
+                  setDepartPickerOpen(false)
+                }}
+                aria-label="Reset to now"
+                style={{
+                  ...iconChipStyle,
+                  width: 26,
+                  height: 26,
+                }}
+              >
+                <CloseIcon size={11} color="var(--bb-mut)" />
+              </button>
+            )}
+          </div>
+          {departPickerOpen && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                type="datetime-local"
+                value={departAt ? isoToLocal(departAt) : ''}
+                onChange={(e) => setDepartAt(localToIso(e.target.value))}
+                style={{
+                  ...textFieldStyle,
+                  background: 'var(--bb-surface)',
+                  border: '1px solid var(--bb-line)',
+                  borderRadius: 10,
+                  padding: '10px 12px',
+                  width: '100%',
+                  color: 'var(--bb-fg)',
+                }}
+              />
+            </div>
+          )}
+
           {geoMessage && (
             <div
               style={{
@@ -542,6 +640,7 @@ export function Home() {
                       originLatLng: r.originLatLng ?? null,
                       destinationText: r.destination,
                       destinationLatLng: r.destinationLatLng ?? null,
+                      departAt,
                     })
                   }
                   style={{

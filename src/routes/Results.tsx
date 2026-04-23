@@ -33,6 +33,7 @@ export function Results() {
   const from = params.get('from') ?? ''
   const to = params.get('to') ?? ''
   const sortBy = (params.get('sortBy') ?? 'fastest') as SortBy
+  const departureTime = params.get('depart') ?? undefined
 
   const fromLatParam = params.get('fromLat')
   const fromLngParam = params.get('fromLng')
@@ -73,6 +74,7 @@ export function Results() {
           destinationLatLng: toLatLng ?? undefined,
           sortBy,
           maxBikeMiles,
+          departureTime,
         })
         setData(res)
         setStoredTrip({
@@ -96,7 +98,7 @@ export function Results() {
         setRefreshing(false)
       }
     },
-    [from, to, fromLatLng, toLatLng, sortBy, maxBikeMiles],
+    [from, to, fromLatLng, toLatLng, sortBy, maxBikeMiles, departureTime],
   )
 
   useEffect(() => {
@@ -321,6 +323,7 @@ export function Results() {
                     p.set('toLat', String(toLatLng.lat))
                     p.set('toLng', String(toLatLng.lng))
                   }
+                  if (departureTime) p.set('depart', departureTime)
                   navigate(`/results/${idx}?${p.toString()}`)
                 }
                 return (

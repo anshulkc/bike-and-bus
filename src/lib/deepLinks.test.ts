@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { buildMapsUrl } from './deepLinks'
+import { buildMapsUrl, buildTripMapsUrl } from './deepLinks'
+import type { Leg, Route } from './types'
+
+function route(legs: Leg[]): Route {
+  return { totalMinutes: 0, savedVsWalking: 0, transferCount: 0, bikingMinutes: 0, legs }
+}
+
+function leg(partial: Partial<Leg> & Pick<Leg, 'type' | 'fromName' | 'toName'>): Leg {
+  return { minutes: 1, googleMapsUrl: '', ...partial }
+}
 
 describe('buildMapsUrl', () => {
   it('builds a bicycling URL with url-encoded origin and destination', () => {
@@ -37,5 +46,68 @@ describe('buildMapsUrl', () => {
     // comma encodes as %2C; minus stays literal
     expect(url).toContain('origin=34.0689%2C-118.4452')
     expect(url).toContain('destination=34.0617%2C-118.3076')
+  })
+})
+
+describe('buildTripMapsUrl', () => {
+  it('returns a bicycling URL for a pure bike trip', () => {
+    const url = buildTripMapsUrl(
+      route([leg({ type: 'bike', fromName: 'Home', toName: '527 Midvale' })]),
+    )
+    expect(url).toContain('origin=Home')
+    expect(url).toContain('destination=527+Midvale')
+    expect(url).toContain('travelmode=bicycling')
+    expect(url).not.toContain('waypoints=')
+  })
+
+  it('returns a transit URL when any leg is transit, covering the whole trip', () => {
+    const url = buildTripMapsUrl(
+      route([
+        leg({ type: 'walk', fromName: 'Home', toName: 'Stop A' }),
+        leg({ type: 'transit', fromName: 'Stop A', toName: 'Stop B' }),
+        leg({ type: 'walk', fromName: 'Stop B', toName: 'Work' }),
+      ]),
+    )
+    expect(url).toContain('origin=Home')
+    expect(url).toContain('destination=Work')
+    expect(url).toContain('travelmode=transit')
+  })
+
+  it('includes transit transfer stops as waypoints when there is more than one transit leg', () => {
+    const url = buildTripMapsUrl(
+      route([
+        leg({ type: 'walk', fromName: 'Home', toName: 'Stop A' }),
+        leg({ type: 'transit', fromName: 'Stop A', toName: 'Stop B' }),
+        leg({ type: 'walk', fromName: 'Stop B', toName: 'Stop C' }),
+        leg({ type: 'transit', fromName: 'Stop C', toName: 'Stop D' }),
+        leg({ type: 'walk', fromName: 'Stop D', toName: 'Work' }),
+      ]),
+    )
+    // Transfer point between the two transit legs. Stop B (first arrival) and
+    // Stop C (second departure) are the handoff; one is enough.
+    expect(url).toContain('waypoints=Stop+B')
+    expect(url).toContain('origin=Home')
+    expect(url).toContain('destination=Work')
+  })
+
+  it('falls back to walking mode for a walk-only trip', () => {
+    const url = buildTripMapsUrl(
+      route([leg({ type: 'walk', fromName: 'A', toName: 'B' })]),
+    )
+    expect(url).toContain('travelmode=walking')
+  })
+
+  it('uses bicycling mode for a trip with bike legs and no transit', () => {
+    const url = buildTripMapsUrl(
+      route([
+        leg({ type: 'bike', fromName: 'Home', toName: 'Stop' }),
+        leg({ type: 'walk', fromName: 'Stop', toName: 'Work' }),
+      ]),
+    )
+    expect(url).toContain('travelmode=bicycling')
+  })
+
+  it('throws for an empty route', () => {
+    expect(() => buildTripMapsUrl(route([]))).toThrow()
   })
 })
