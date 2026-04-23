@@ -13,7 +13,6 @@ import { InstallHint } from '../components/InstallHint'
 import { SettingsSheet } from '../components/SettingsSheet'
 import { GeolocationError, getCurrentPosition } from '../lib/geolocation'
 import {
-  placesAvailable,
   usePlaceAutocomplete,
   type PlaceSelection,
   type Prediction,
@@ -570,23 +569,6 @@ export function Home() {
               role={geoState === 'requesting' ? 'status' : 'alert'}
             >
               {geoMessage}
-            </div>
-          )}
-
-          {!placesAvailable() && (
-            <div
-              style={{
-                marginTop: 8,
-                padding: '8px 12px',
-                borderRadius: 10,
-                background: 'var(--bb-soft)',
-                color: 'var(--bb-mut)',
-                fontSize: 11,
-                lineHeight: 1.4,
-              }}
-            >
-              Autocomplete disabled — <code>VITE_GOOGLE_BROWSER_KEY</code> not set. Addresses still
-              work (geocoded server-side).
             </div>
           )}
 
