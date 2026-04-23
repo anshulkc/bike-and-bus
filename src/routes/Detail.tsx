@@ -11,6 +11,7 @@ import { fetchRoutes, RoutesApiError } from '../lib/api'
 import { buildTripMapsUrl } from '../lib/deepLinks'
 import { formatLocalTime } from '../lib/formatTime'
 import { useMaxBikeMiles } from '../lib/prefs'
+import { idealLeaveBy } from '../lib/waitTime'
 import { getStoredTrip, setStoredTrip } from '../lib/routeStore'
 import type { LatLng, Leg, Route, SortBy } from '../lib/types'
 
@@ -290,9 +291,10 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
             </div>
             {dep && arr && (
               <div style={{ fontSize: 13, color: 'var(--bb-mut)', marginTop: 4 }}>
-                {dep} — {arr}
+                {formatLocalTime(dep)} — {formatLocalTime(arr)}
               </div>
             )}
+            <LeaveByHint route={route} />
           </div>
           {route.savedVsWalking > 0 && (
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -506,6 +508,29 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
         </div>
       </div>
     </Frame>
+  )
+}
+
+function LeaveByHint({ route }: { route: Route }) {
+  const leaveBy = useMemo(() => idealLeaveBy(route), [route])
+  if (!leaveBy) return null
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '5px 10px',
+        borderRadius: 999,
+        background: 'var(--bb-soft)',
+        color: 'var(--bb-fg)',
+        fontSize: 12,
+        fontWeight: 500,
+      }}
+    >
+      Leave by {formatLocalTime(leaveBy.toISOString())}
+    </div>
   )
 }
 

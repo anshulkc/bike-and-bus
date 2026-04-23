@@ -1,5 +1,6 @@
 import { BikeIcon, BusIcon, ChevIcon, WalkIcon } from './Icon'
 import { formatLocalTime } from '../lib/formatTime'
+import { idealLeaveBy } from '../lib/waitTime'
 import type { Route, Leg, LegType } from '../lib/types'
 
 type Props = {
@@ -32,6 +33,7 @@ function legSummary(leg: Leg): string {
 export function RouteCardDetailed({ route, index, onOpen, isFastest }: Props) {
   const tag = tagFor(index, isFastest)
   const arr = arriveAt(route)
+  const leaveBy = idealLeaveBy(route)
 
   // Build a step list: start → leg → leg → ... → end
   const steps: Array<{
@@ -125,11 +127,18 @@ export function RouteCardDetailed({ route, index, onOpen, isFastest }: Props) {
         >
           {tag}
         </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: -0.6 }}>{route.totalMinutes}</div>
-          <div style={{ fontSize: 12, color: 'var(--bb-mut)' }}>
-            min{arr ? ` · arrive ${formatLocalTime(arr)}` : ''}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: -0.6 }}>{route.totalMinutes}</div>
+            <div style={{ fontSize: 12, color: 'var(--bb-mut)' }}>
+              min{arr ? ` · arrive ${formatLocalTime(arr)}` : ''}
+            </div>
           </div>
+          {leaveBy && (
+            <div style={{ fontSize: 11, color: 'var(--bb-mut)' }}>
+              leave by {formatLocalTime(leaveBy.toISOString())}
+            </div>
+          )}
         </div>
       </div>
 
@@ -239,6 +248,7 @@ export function RouteCardCompact({ route, index, onOpen, isFastest }: Props) {
   const tag = tagFor(index, isFastest)
   const arr = arriveAt(route)
   const dep = route.legs.find((l) => l.departAt)?.departAt ?? null
+  const leaveBy = idealLeaveBy(route)
 
   // Aggregate per-mode minutes for the inline summary line
   const buckets: Record<LegType, number> = { bike: 0, transit: 0, walk: 0 }
@@ -320,7 +330,11 @@ export function RouteCardCompact({ route, index, onOpen, isFastest }: Props) {
           }}
         >
           {tag}
-          {dep && arr ? ` · ${formatLocalTime(dep)} → ${formatLocalTime(arr)}` : ''}
+          {leaveBy
+            ? ` · leave ${formatLocalTime(leaveBy.toISOString())}`
+            : dep && arr
+              ? ` · ${formatLocalTime(dep)} → ${formatLocalTime(arr)}`
+              : ''}
           {route.savedVsWalking > 0 ? ` · saves ${route.savedVsWalking} min` : ''}
         </div>
       </div>
