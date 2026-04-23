@@ -8,6 +8,10 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      // Temporary: ship a self-destroying SW so existing installs clear their
+      // stale caches on next visit without requiring manual action. Flip back
+      // to 'autoUpdate' in the next deploy to re-enable normal PWA behavior.
+      selfDestroying: true,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'icon.svg'],
       manifest: {
