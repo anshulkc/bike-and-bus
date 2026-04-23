@@ -22,8 +22,16 @@ export function buildMapsUrl(args: {
 
 // Build a deep link that covers the entire trip, not just one leg. Pick the
 // most "defining" travel mode: transit if any leg uses transit, else bike if
-// any leg uses bike, else walking. Intermediate transit transfer points are
-// passed as waypoints so Google Maps reconstructs the same multi-hop itinerary.
+// any leg uses bike, else walking.
+//
+// Known Google Maps URL-API quirk: `waypoints` is silently ignored — or
+// breaks the routing outright with "Sorry, we could not calculate transit
+// directions" — when combined with `travelmode=transit`. Google's own
+// Directions docs say: "Waypoints are not available for transit directions."
+// So for transit trips we pass origin + destination only and let Maps
+// replan; the per-leg buttons on the Detail page preserve the fidelity we
+// lose here. Waypoints still work for bicycling/walking and are passed
+// through in those modes.
 export function buildTripMapsUrl(route: Route): string {
   if (route.legs.length === 0) {
     throw new Error('buildTripMapsUrl: route has no legs')
@@ -37,19 +45,23 @@ export function buildTripMapsUrl(route: Route): string {
   else if (route.legs.some((l) => l.type === 'bike')) mode = 'bike'
   else mode = 'walk'
 
-  // Transit transfer point: the arrival stop of each transit leg except the
-  // last. One waypoint per transfer lets Google pick the right buses.
-  const transitLegs = route.legs.filter((l) => l.type === 'transit')
-  const waypoints = transitLegs.slice(0, -1).map((l) => l.toName)
-
   const params = new URLSearchParams({
     api: '1',
     origin: first.fromName,
     destination: last.toName,
     travelmode: TRAVEL_MODE[mode],
   })
-  if (waypoints.length > 0) {
-    params.set('waypoints', waypoints.join('|'))
+
+  // Only bike/walk trips get waypoints. Transit mode would reject or ignore them.
+  if (mode !== 'transit') {
+    const handoffs = route.legs
+      .slice(0, -1)
+      .map((l) => l.toName)
+      .filter((name, i, arr) => name && name !== arr[i - 1])
+    if (handoffs.length > 0) {
+      params.set('waypoints', handoffs.join('|'))
+    }
   }
+
   return `https://www.google.com/maps/dir/?${params.toString()}`
 }

@@ -73,7 +73,10 @@ describe('buildTripMapsUrl', () => {
     expect(url).toContain('travelmode=transit')
   })
 
-  it('includes transit transfer stops as waypoints when there is more than one transit leg', () => {
+  it('omits waypoints for transit trips — Google Maps does not support the combo', () => {
+    // "Waypoints are not available for transit directions." Passing them
+    // causes Maps to fail with "could not calculate transit directions."
+    // The Detail page's per-leg buttons preserve the transfer fidelity.
     const url = buildTripMapsUrl(
       route([
         leg({ type: 'walk', fromName: 'Home', toName: 'Stop A' }),
@@ -83,11 +86,22 @@ describe('buildTripMapsUrl', () => {
         leg({ type: 'walk', fromName: 'Stop D', toName: 'Work' }),
       ]),
     )
-    // Transfer point between the two transit legs. Stop B (first arrival) and
-    // Stop C (second departure) are the handoff; one is enough.
-    expect(url).toContain('waypoints=Stop+B')
+    expect(url).not.toContain('waypoints=')
     expect(url).toContain('origin=Home')
     expect(url).toContain('destination=Work')
+    expect(url).toContain('travelmode=transit')
+  })
+
+  it('includes waypoints for a bike trip with intermediate handoffs', () => {
+    // Waypoints DO work for bicycling and walking modes.
+    const url = buildTripMapsUrl(
+      route([
+        leg({ type: 'bike', fromName: 'Home', toName: 'Park' }),
+        leg({ type: 'bike', fromName: 'Park', toName: 'Work' }),
+      ]),
+    )
+    expect(url).toContain('waypoints=Park')
+    expect(url).toContain('travelmode=bicycling')
   })
 
   it('falls back to walking mode for a walk-only trip', () => {

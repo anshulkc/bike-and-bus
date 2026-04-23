@@ -566,6 +566,8 @@ function stepForLeg(leg: Leg): Step {
           ? `departs ${formatLocalTime(leg.departAt)}`
           : null,
       line: leg.line,
+      actionHref: leg.googleMapsUrl,
+      actionLabel: 'Open in Maps',
     }
   }
   return {
