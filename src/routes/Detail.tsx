@@ -7,7 +7,6 @@ import {
   ExternalIcon,
   WalkIcon,
 } from '../components/Icon'
-import { MapTile } from '../components/MapTile'
 import { fetchRoutes, RoutesApiError } from '../lib/api'
 import { buildTripMapsUrl } from '../lib/deepLinks'
 import { formatLocalTime } from '../lib/formatTime'
@@ -230,16 +229,19 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
 
   return (
     <Frame>
-      {/* map header */}
-      <div style={{ position: 'relative' }}>
-        <MapTile route={route} height={240} />
+      {/* header — back button and total-mile chip */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '14px 16px 0',
+        }}
+      >
         <Link
           to={backHref}
           aria-label="Back"
           style={{
-            position: 'absolute',
-            top: 14,
-            left: 16,
             width: 36,
             height: 36,
             borderRadius: 10,
@@ -248,7 +250,6 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
             color: 'var(--bb-fg)',
             display: 'grid',
             placeItems: 'center',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
           }}
         >
           <ChevIcon size={14} color="var(--bb-fg)" dir="left" />
@@ -256,16 +257,12 @@ function DetailBody({ route, backHref }: { route: Route; backHref: string }) {
         {totalMiles && (
           <div
             style={{
-              position: 'absolute',
-              top: 14,
-              right: 16,
               padding: '8px 12px',
               borderRadius: 10,
               background: 'var(--bb-surface)',
               border: '1px solid var(--bb-line)',
               fontSize: 12,
               fontWeight: 500,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
             }}
           >
             {totalMiles} mi
