@@ -5,8 +5,10 @@
 Bike and Bus is a mixed-mode route planner that combines biking (or scootering) with public transit. Enter an origin and destination, and it finds hybrid routes — replacing the walking portions of transit trips with bike legs when biking is faster. The result: real routes that are often significantly quicker than what Google Maps suggests.
 
 <p align="center">
-  <img width="360" alt="Route results showing bike + bus combinations" src="https://github.com/user-attachments/assets/28aee852-d50a-482a-813d-c6a3524d5858" />
+<img width="354" alt="Home screen with recent trips" src="https://github.com/user-attachments/assets/d0388ce3-8a6e-4107-b66e-75240d71a082" />
 </p>
+
+
 
 ## How it works
 
@@ -19,8 +21,9 @@ Bike and Bus is a mixed-mode route planner that combines biking (or scootering) 
 <p align="center">
   <img width="481" alt="Detailed route view with timeline" src="https://github.com/user-attachments/assets/6efa9eaf-7807-40fb-a042-6f4674b415c9" />
   &nbsp;&nbsp;
-  <img width="354" alt="Home screen with recent trips" src="https://github.com/user-attachments/assets/d0388ce3-8a6e-4107-b66e-75240d71a082" />
+<img width="360" alt="Route results showing bike + bus combinations" src="https://github.com/user-attachments/assets/28aee852-d50a-482a-813d-c6a3524d5858" />
 </p>
+  
 
 ## Features
 
